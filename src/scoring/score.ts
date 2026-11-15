@@ -104,14 +104,25 @@ export function score(
   });
   const accountScore = items.reduce((s, i) => s + i.earned, 0);
   const accountMax = items.reduce((s, i) => s + i.points, 0);
+  // 未能检查的项不扣分，但它们可能是「有」。区间上界要把这部分算进去，
+  // 否则区间会显得比实际知道的更确定（D-29）
+  const unknownPoints = items
+    .filter((i) => i.state === 'unknown')
+    .reduce((s, i) => s + i.points, 0);
 
   const total: ScoreTriple = {
     low: low.score + accountScore,
     point: point.score + accountScore,
-    high: high.score + accountScore,
+    high: high.score + accountScore + unknownPoints,
   };
 
-  const typeCounts: Record<MonetizationType, number> = { brand: 0, self: 0, knowledge: 0, fan: 0 };
+  const typeCounts: Record<MonetizationType, number> = {
+    brand: 0,
+    goods: 0,
+    self: 0,
+    knowledge: 0,
+    fan: 0,
+  };
   for (const v of verdicts) {
     const top = v.evidence[0];
     if (top) typeCounts[top.type] += 1;
@@ -173,7 +184,7 @@ export function score(
       fetched: snapshot.videos.length,
       latestPubdate,
     },
-    account: { score: accountScore, max: accountMax, items },
+    account: { score: accountScore, max: accountMax, unknownPoints, items },
     typeCounts,
     verdicts,
     confidence: { level, reasons },

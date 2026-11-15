@@ -62,21 +62,67 @@ describe('B 带货转化', () => {
     expect(hits.some((e) => e.tier === 'B' && e.field === 'pinnedComment')).toBe(true);
   });
 
-  it('置顶评论里平台标记的商品链接算带货，引用为评论原文片段', () => {
+  // 以下链接形态来自 2026-11-15 在真实页面上的观察（D-30）
+  it('B 站商品短链算带货，类型为商品带货', () => {
+    const video = v({ title: '吃播', pinnedComment: '想吃的戳这里 https://b23.tv/mall-2gGvc-2rwDr' });
+    const [hit] = classifyVideoByRules(video, false);
+    expect(hit).toMatchObject({ tier: 'B', type: 'goods', reason: 'B1-购物链接' });
+    expect(hit?.quote).toContain('想吃的戳这里');
+  });
+
+  it('B 站商业推广短链算带货，类型为品牌合作', () => {
+    const video = v({ title: '探店', pinnedComment: '同款 https://b23.tv/cm-yaoyue-0-3k3RD' });
+    const [hit] = classifyVideoByRules(video, false);
+    expect(hit).toMatchObject({ tier: 'B', type: 'brand', reason: 'B1-商业推广链接' });
+  });
+
+  it('普通的 B 站短链不算', () => {
+    const video = v({ title: '日常', pinnedComment: '上一期在这 https://b23.tv/BV1xx411c7mD' });
+    expect(classifyVideoByRules(video, false)).toEqual([]);
+  });
+
+  it('平台自动加的搜索词链接不算带货（真实误报：Akira）', () => {
+    const video = v({
+      title: '带日本小哥逛南京',
+      pinnedComment: '感谢 Akira 出镜',
+      pinnedLinks: [
+        {
+          keyword: 'Akira',
+          target: 'https://search.bilibili.com/all?keyword=Akira',
+          title: 'Akira',
+          wordSearch: true,
+        },
+      ],
+    });
+    expect(classifyVideoByRules(video, false)).toEqual([]);
+  });
+
+  it('显示为文字、跳转到商品页的链接算带货，引用带上下文', () => {
     const video = v({
       title: '开箱',
-      pinnedComment: '同款在这 某某耳机旗舰款',
-      pinnedLinks: [{ keyword: '某某耳机旗舰款', target: '', isGoods: true }],
+      pinnedComment: '同款在这 某某耳机旗舰款 欢迎选购',
+      pinnedLinks: [
+        {
+          keyword: '某某耳机旗舰款',
+          target: 'https://mall.bilibili.com/detail.html?id=1',
+          title: '某某耳机',
+          wordSearch: false,
+        },
+      ],
     });
     const hit = classifyVideoByRules(video, false).find((e) => e.reason === 'B8-评论商品链接');
-    expect(hit).toMatchObject({ tier: 'B', field: 'pinnedComment', quote: '某某耳机旗舰款' });
+    expect(hit).toMatchObject({ tier: 'B', type: 'goods', field: 'pinnedComment' });
+    expect(video.pinnedComment).toContain(hit!.quote);
+    expect(hit!.quote).toContain('某某耳机旗舰款');
   });
 
   it('置顶评论里的普通链接（如 @某人）不算带货', () => {
     const video = v({
       title: '日常',
       pinnedComment: '感谢 @某人 的帮助',
-      pinnedLinks: [{ keyword: '@某人', target: 'https://space.bilibili.com/1', isGoods: false }],
+      pinnedLinks: [
+        { keyword: '@某人', target: 'https://space.bilibili.com/1', title: '', wordSearch: false },
+      ],
     });
     expect(classifyVideoByRules(video, false)).toEqual([]);
   });
@@ -85,7 +131,14 @@ describe('B 带货转化', () => {
     const video = v({
       title: '日常',
       pinnedComment: '今天天气不错',
-      pinnedLinks: [{ keyword: '不存在的片段', target: '', isGoods: true }],
+      pinnedLinks: [
+        {
+          keyword: '不存在的片段',
+          target: 'https://mall.bilibili.com/x',
+          title: '',
+          wordSearch: false,
+        },
+      ],
     });
     expect(classifyVideoByRules(video, false)).toEqual([]);
   });

@@ -7,7 +7,14 @@
 export type Tier = 'A' | 'B' | 'C';
 
 /** 变现类型。不影响分数，帮助判断此人做的是哪种生意 */
-export type MonetizationType = 'brand' | 'self' | 'knowledge' | 'fan';
+/**
+ *   brand     品牌合作、商业推广
+ *   goods     挂了商品链接，但分不清是自营还是分销
+ *   self      明确是自己的店铺或周边
+ *   knowledge 课程等知识产品
+ *   fan       充电等粉丝付费
+ */
+export type MonetizationType = 'brand' | 'goods' | 'self' | 'knowledge' | 'fan';
 
 /** 三态：有 / 无 / 未能检查。没抓到不等于没有（D-13） */
 export type Tri = 'yes' | 'no' | 'unknown';
@@ -35,8 +42,10 @@ export interface PinnedLink {
   keyword: string;
   /** 跳转目标地址，可能为空 */
   target: string;
-  /** 平台是否把它标记为商品链接 */
-  isGoods: boolean;
+  /** 平台给这个链接显示的标题，可能为空 */
+  title: string;
+  /** 是否是平台自动加的搜索关键词链接（不是创作者放的链接） */
+  wordSearch: boolean;
 }
 
 /**
@@ -109,7 +118,7 @@ export interface ScoreTriple {
   low: number;
   /** 点估计 */
   point: number;
-  /** 上界：疑似档权重取 1 */
+  /** 上界：疑似档权重取 1；总分的上界还假定未能检查的账号层指标全部为「有」 */
   high: number;
 }
 
@@ -148,6 +157,8 @@ export interface Report {
   account: {
     score: number;
     max: number;
+    /** 「未能检查」的项合计多少分。计入总分区间的上界（D-29） */
+    unknownPoints: number;
     items: Array<AccountFinding & { label: string; points: number; earned: number }>;
   };
   typeCounts: Record<MonetizationType, number>;

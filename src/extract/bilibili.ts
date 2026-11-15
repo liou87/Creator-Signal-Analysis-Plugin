@@ -1,4 +1,11 @@
-import type { CreatorSnapshot, SourceStatus, Tri, VideoItem, VideoSource } from '../types';
+import type {
+  CreatorSnapshot,
+  PinnedLink,
+  SourceStatus,
+  Tri,
+  VideoItem,
+  VideoSource,
+} from '../types';
 import { midFromUrl, nameFromTitle } from './identify';
 import { keysFromNav, signQuery, type WbiKeys } from './wbi';
 
@@ -79,7 +86,7 @@ interface AccInfo {
   elec?: { show_info?: { show?: boolean } };
 }
 
-interface Profile {
+export interface Profile {
   name: string | null;
   bio: string | null;
   officialTitle: string | null;
@@ -104,25 +111,40 @@ async function loadProfile(mid: string, keys: WbiKeys | null, c: Collector): Pro
       c.fail('昵称、简介、认证', '接口 acc/info', e);
     }
   }
+
+  // 备用：用户名片接口，不需要签名。有简介和认证，没有充电信息。
+  try {
+    const d = await getJson<CardData>(`${API}/x/web-interface/card?mid=${mid}&photo=false`);
+    if (!d.card) throw new Error('返回中没有名片信息');
+    c.ok('昵称、简介、认证', '接口 card（备用）', '不含充电信息');
+    return profileFromCard(d);
+  } catch (e) {
+    c.fail('昵称、简介、认证', '接口 card（备用）', e);
+  }
+
   const name = nameFromTitle(document.title);
-  if (name) c.ok('昵称', '页面标题（备用）');
+  if (name) c.ok('昵称', '页面标题（备用）', '简介与认证未能取到');
   else c.fail('昵称', '页面标题（备用）', `标题格式不符：「${document.title.slice(0, 40)}」`);
-
-  const meta = document.querySelector('meta[name="description"]')?.getAttribute('content') ?? '';
-  const bio = bioFromMetaDescription(meta);
-  if (bio !== null) c.ok('简介', '页面描述信息（备用）', '认证未能取到');
-  else c.fail('简介', '页面描述信息（备用）', `格式不符：「${meta.slice(0, 40)}」`);
-
-  return { name, bio, officialTitle: null, charge: 'unknown' };
+  return { name, bio: null, officialTitle: null, charge: 'unknown' };
 }
 
-/**
- * 备用简介：空间页的描述信息形如「昵称，简介内容；昵称的主页、动态、视频…」。
- * 格式不符时返回 null（未取到），不去猜。导出以便测试
- */
-export function bioFromMetaDescription(content: string): string | null {
-  const m = /^(.+?)，([\s\S]*?)；\1的主页/.exec(content);
-  return m ? (m[2] ?? '').trim() : null;
+interface CardData {
+  card?: {
+    name?: string;
+    sign?: string;
+    Official?: { title?: string; desc?: string };
+  };
+}
+
+/** 导出以便测试 */
+export function profileFromCard(d: CardData): Profile {
+  const official = d.card?.Official;
+  return {
+    name: d.card?.name ?? null,
+    bio: d.card?.sign ?? '',
+    officialTitle: [official?.title, official?.desc].filter(Boolean).join(' '),
+    charge: 'unknown',
+  };
 }
 
 // ── 视频列表 ────────────────────────────────────────────────
@@ -188,15 +210,35 @@ function describeList(list: VideoItem[]): string {
 /**
  * 视频列表依次尝试三条路径。前两条是接口，返回的是最近投稿；
  * 第三条只是当前页面上看得到的视频，不一定是最近的（D-27）。
+ *
+ * 顺序来自真实页面验证：recArchivesByKeywords 未登录也能用，按发布时间
+ * 从新到旧返回；arc/search 被风控拒绝（-352），所以排在后面。
  */
 async function loadVideoList(
   mid: string,
   keys: WbiKeys | null,
   c: Collector,
 ): Promise<{ list: VideoItem[]; source: VideoSource }> {
+  try {
+    // 多取一些再按时间排序，不依赖它的默认顺序
+    const d = await getJson<RecArchives>(
+      `${API}/x/series/recArchivesByKeywords?mid=${mid}&keywords=&ps=100&pn=1`,
+    );
+    const list = (d.archives ?? []).map((v) => ({
+      bvid: v.bvid,
+      title: v.title,
+      url: videoUrl(v.bvid),
+      pubdate: v.pubdate,
+    }));
+    c.ok('视频列表', '接口 recArchivesByKeywords', describeList(list));
+    return { list: newest(list), source: 'api' };
+  } catch (e) {
+    c.fail('视频列表', '接口 recArchivesByKeywords', e);
+  }
+
   if (keys) {
     const webId = webIdFromPage();
-    const path = `接口 arc/search${webId ? '（带页面令牌）' : '（页面里没有令牌）'}`;
+    const path = `接口 arc/search（备用${webId ? '，带页面令牌' : '，页面里没有令牌'}）`;
     try {
       const params: Record<string, string | number> = {
         mid,
@@ -219,23 +261,6 @@ async function loadVideoList(
     } catch (e) {
       c.fail('视频列表', path, e);
     }
-  }
-
-  try {
-    // 另一个返回投稿的公开接口，不需要签名。多取一些再按时间排序，不依赖它的默认顺序
-    const d = await getJson<RecArchives>(
-      `${API}/x/series/recArchivesByKeywords?mid=${mid}&keywords=&ps=100&pn=1`,
-    );
-    const list = (d.archives ?? []).map((v) => ({
-      bvid: v.bvid,
-      title: v.title,
-      url: videoUrl(v.bvid),
-      pubdate: v.pubdate,
-    }));
-    c.ok('视频列表', '接口 recArchivesByKeywords（备用）', describeList(list));
-    return { list: newest(list), source: 'api' };
-  } catch (e) {
-    c.fail('视频列表', '接口 recArchivesByKeywords（备用）', e);
   }
 
   const list = videosFromDom(document);
@@ -278,10 +303,20 @@ interface DetailStats {
   tags: number;
   pinned: number;
   pinnedFound: number;
-  pinnedGoods: number;
+  /** 置顶评论里带链接片段的条数 */
+  pinnedWithLinks: number;
   /** 置顶评论实际走通的路径 → 次数 */
   pinnedPaths: Record<string, number>;
+  /** 每种链接各留一个原始样例，供自检展示。用来核对对返回字段的理解是否正确 */
+  linkSamples: Map<string, string>;
   errors: string[];
+}
+
+interface PinnedResult {
+  comment?: string;
+  links: PinnedLink[];
+  /** 每个链接的原始附加信息，仅用于自检 */
+  raw: Array<{ keyword: string; target: string; extra: string }>;
 }
 
 /** 置顶评论有三条路径，依次尝试。哪条走通记在 stats 里，供自检展示 */
@@ -300,18 +335,33 @@ function replyUrls(aid: number, keys: WbiKeys | null): Array<{ name: string; url
   return urls;
 }
 
-/** 从评论接口的返回里取出 UP 主置顶的那条。导出以便测试 */
-export function pinnedFromReply(d: ReplyData): Pick<VideoItem, 'pinnedComment' | 'pinnedLinks'> {
+/**
+ * 从评论接口的返回里取出 UP 主置顶的那条。导出以便测试。
+ *
+ * 只记录事实，不判断是不是带货。唯一读取的附加字段是 is_word_search：
+ * 平台会给评论里的热词自动加搜索链接，那不是创作者放的。
+ * （曾经用「附加信息里有没有 goods 字样」判断商品链接，真实页面验证发现
+ * 所有链接都带这类字段，包括搜索词，已弃用。见 D-30。）
+ */
+export function pinnedFromReply(d: ReplyData): PinnedResult {
   const content =
     d.top?.upper?.content ?? d.upper?.top?.content ?? d.top_replies?.[0]?.content;
-  if (!content?.message) return {};
-  const links = Object.entries(content.jump_url ?? {}).map(([keyword, info]) => ({
-    keyword,
-    target: info?.pc_url ?? '',
-    // 平台对商品链接会在附加信息里带 goods 相关字段
-    isGoods: /goods/i.test(JSON.stringify(info?.extra ?? '')),
-  }));
-  return { pinnedComment: content.message, pinnedLinks: links.length ? links : undefined };
+  if (!content?.message) return { links: [], raw: [] };
+  const entries = Object.entries(content.jump_url ?? {});
+  return {
+    comment: content.message,
+    links: entries.map(([keyword, info]) => ({
+      keyword,
+      target: info?.pc_url ?? '',
+      title: info?.title ?? '',
+      wordSearch: (info?.extra as { is_word_search?: unknown } | undefined)?.is_word_search === true,
+    })),
+    raw: entries.map(([keyword, info]) => ({
+      keyword,
+      target: info?.pc_url ?? '',
+      extra: JSON.stringify(info?.extra ?? null),
+    })),
+  };
 }
 
 async function enrich(
@@ -351,10 +401,23 @@ async function enrich(
         const pinned = pinnedFromReply(await getJson<ReplyData>(url));
         reached = true;
         stats.pinnedPaths[name] = (stats.pinnedPaths[name] ?? 0) + 1;
-        if (pinned.pinnedComment) {
-          Object.assign(out, pinned);
+        if (pinned.comment) {
+          out.pinnedComment = pinned.comment;
           stats.pinnedFound++;
-          if (pinned.pinnedLinks?.some((l) => l.isGoods)) stats.pinnedGoods++;
+          if (pinned.links.length > 0) {
+            out.pinnedLinks = pinned.links;
+            stats.pinnedWithLinks++;
+          }
+          for (const r of pinned.raw) {
+            // 按「片段是不是网址」分两类，各留一个样例
+            const kind = /^https?:\/\//.test(r.keyword) ? '网址片段' : '文字片段';
+            if (!stats.linkSamples.has(kind)) {
+              stats.linkSamples.set(
+                kind,
+                `${kind}「${r.keyword.slice(0, 40)}」→ 跳转 ${r.target.slice(0, 60) || '（空）'}，附加信息 ${r.extra.slice(0, 200)}`,
+              );
+            }
+          }
         }
         break;
       } catch (e) {
@@ -410,9 +473,13 @@ export function entriesFromTexts(texts: Set<string>): { shop: Tri; course: Tri; 
   return {
     shop: has(/^(小店|橱窗|店铺|商品)\d*$/),
     course: has(/^(课堂|课程)\d*$/),
-    charge: has(/^(充电|为TA充电|包月充电|充电中)$/),
+    // 充电是页头的按钮，不在导航栏里。认出导航栏不能说明「没有充电」，
+    // 所以页面只能给出「有」，给不出「无」（D-31）
+    charge: list.some((t) => /^(充电|为TA充电|包月充电|充电中)$/.test(t)) ? 'yes' : 'unknown',
   };
 }
+
+const TRI_TEXT: Record<Tri, string> = { yes: '有', no: '无', unknown: '未能检查' };
 
 // ── 入口 ────────────────────────────────────────────────────
 
@@ -433,8 +500,9 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     tags: 0,
     pinned: 0,
     pinnedFound: 0,
-    pinnedGoods: 0,
+    pinnedWithLinks: 0,
     pinnedPaths: {},
+    linkSamples: new Map(),
     errors: [],
   };
   let done = 0;
@@ -459,8 +527,11 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     '置顶评论',
     `接口 ${paths || 'reply（三条路径均未走通）'}`,
     stats.pinned,
-    `，其中 ${stats.pinnedFound} 条有置顶评论，${stats.pinnedGoods} 条含平台标记的商品链接`,
+    `，其中 ${stats.pinnedFound} 条有置顶评论，${stats.pinnedWithLinks} 条带链接片段`,
   );
+  for (const sample of stats.linkSamples.values()) {
+    c.ok('评论链接原始样例', '接口返回的 jump_url', sample);
+  }
   if (stats.errors.length > 0) {
     c.sources.push({
       item: '详情请求错误（前 3 条）',
@@ -471,16 +542,22 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
   }
 
   const entries = entriesFromTexts(shortTexts(document));
-  // 充电：接口给了明确答案就用接口的，否则看页面
-  const charge = profile.charge !== 'unknown' ? profile.charge : entries.charge;
   c.sources.push({
-    item: '充电、小店、课程入口',
-    path: '页面文字',
+    item: '小店、课程入口',
+    path: '页面导航栏文字',
     ok: entries.shop !== 'unknown',
     detail:
       entries.shop === 'unknown'
-        ? '没有认出导航栏，这三项记为未能检查'
-        : `小店 ${entries.shop}，课程 ${entries.course}，充电 ${charge}`,
+        ? '没有认出导航栏，这两项记为未能检查'
+        : `小店 ${TRI_TEXT[entries.shop]}，课程 ${TRI_TEXT[entries.course]}`,
+  });
+  // 充电：接口给了明确答案就用接口的；否则页面上看到按钮算「有」，看不到算「未能检查」
+  const charge = profile.charge !== 'unknown' ? profile.charge : entries.charge;
+  c.sources.push({
+    item: '充电',
+    path: '接口 acc/info，其次页面文字',
+    ok: charge !== 'unknown',
+    detail: `接口：${TRI_TEXT[profile.charge]}；页面：${entries.charge === 'yes' ? '看到充电按钮' : '没看到充电按钮（不能据此认为没有）'}；采用：${TRI_TEXT[charge]}`,
   });
 
   return {

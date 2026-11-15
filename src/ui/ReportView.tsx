@@ -5,7 +5,7 @@ const cfg = DEFAULT_CONFIG;
 
 const BAND_LABEL: Record<Band, string> = { low: '低', mid: '中', high: '高' };
 const BAND_MEANING: Record<Band, string> = {
-  low: '公开内容中几乎看不到变现行为，或只有零星痕迹。',
+  low: '公开内容中观察到的变现行为较少。',
   mid: '有稳定的变现行为，但不是内容的主体，或渠道较单一。',
   high: '变现是这个账号公开活动的重要部分：商业内容频繁，且搭建了多种渠道。',
 };
@@ -13,6 +13,7 @@ const CONF_LABEL: Record<Confidence, string> = { low: '低', mid: '中', high: '
 const TIER_LABEL: Record<Tier, string> = { A: '明确披露', B: '带货转化', C: '疑似软广' };
 const TYPE_LABEL: Record<MonetizationType, string> = {
   brand: '品牌合作',
+  goods: '商品带货',
   self: '自营带货',
   knowledge: '知识付费',
   fan: '粉丝付费',
@@ -68,6 +69,15 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
   );
   const wC = cfg.content.tierWeight.C;
   const empty = content.sampleSize === 0;
+  const bandAt = (n: number): Band =>
+    n >= cfg.bands.high ? 'high' : n >= cfg.bands.mid ? 'mid' : 'low';
+  // 区间两端落在不同的档里时，单看分档会过于确定，要明说
+  const crosses = bandAt(total.low) !== bandAt(total.high);
+  const unknownLabels = account.items.filter((i) => i.state === 'unknown').map((i) => i.label);
+  const unknownNote =
+    account.unknownPoints > 0
+      ? `，并假定未能检查的 ${unknownLabels.length} 项（${unknownLabels.join('、')}，共 ${account.unknownPoints} 分）全部为「有」`
+      : '';
   const sourceTrouble = !content.assessed || report.sources.some((s) => !s.ok);
 
   return (
@@ -91,10 +101,16 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
             </div>
             <RangeBar low={total.low} point={total.point} high={total.high} />
             <p>{BAND_MEANING[report.band]}</p>
+            {crosses && (
+              <p className="warn">
+                区间跨了「{BAND_LABEL[bandAt(total.low)]}」和「{BAND_LABEL[bandAt(total.high)]}
+                」两档：按现有信息还不能确定属于哪一档。
+              </p>
+            )}
             {empty && <p className="warn">{emptySampleNote(content)}内容层按 0 计。</p>}
             <p className="muted">
-              区间下界只算确证的证据（明确披露、带货转化），上界把疑似软广全部算上。
-              {total.high - total.low < 1 ? '本次没有疑似证据，区间收缩为一个点。' : ''}
+              区间下界只算确证的证据；上界假定疑似软广全部属实{unknownNote}。
+              {total.high - total.low < 1 ? '本次两者都没有，区间收缩为一个点。' : ''}
             </p>
           </>
         ) : (
@@ -190,7 +206,7 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
               {i.label}：{i.basis}
             </div>
           ))}
-        <p className="muted">「未能检查」不扣分，只降低置信度。</p>
+        <p className="muted">「未能检查」不扣分，但计入区间上界，并降低置信度。</p>
 
         {content.assessed && (
           <>

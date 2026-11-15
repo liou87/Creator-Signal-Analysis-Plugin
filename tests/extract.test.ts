@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  bioFromMetaDescription,
-  entriesFromTexts,
-  pinnedFromReply,
-} from '../src/extract/bilibili';
+import { entriesFromTexts, pinnedFromReply, profileFromCard } from '../src/extract/bilibili';
 import { midFromUrl, nameFromTitle } from '../src/extract/identify';
 import { keysFromNav, mixinKey, signQuery } from '../src/extract/wbi';
 
@@ -61,45 +57,78 @@ describe('识别创作者', () => {
     expect(nameFromTitle('哔哩哔哩')).toBeNull();
   });
 
-  it('从页面描述信息取简介（备用路径）', () => {
+  it('从名片接口取昵称、简介、认证；名片里没有充电信息', () => {
     expect(
-      bioFromMetaDescription(
-        '某某，美食的背后，是文化和故事。商务合作请联系vx：abc；某某的主页、动态、视频、专栏、频道、收藏、订阅等。',
-      ),
-    ).toBe('美食的背后，是文化和故事。商务合作请联系vx：abc');
+      profileFromCard({
+        card: {
+          name: '某某',
+          sign: '商务合作请联系vx：abc',
+          Official: { title: '知名美食UP主', desc: '' },
+        },
+      }),
+    ).toEqual({
+      name: '某某',
+      bio: '商务合作请联系vx：abc',
+      officialTitle: '知名美食UP主',
+      charge: 'unknown',
+    });
   });
 
-  it('描述信息格式不符时返回 null，不去猜', () => {
-    expect(bioFromMetaDescription('哔哩哔哩，你感兴趣的视频都在B站')).toBeNull();
-    expect(bioFromMetaDescription('')).toBeNull();
+  it('名片里简介为空时是空字符串（取到了但为空），不是 null', () => {
+    expect(profileFromCard({ card: { name: '某某' } }).bio).toBe('');
   });
 });
 
 describe('置顶评论（D-12）', () => {
   const content = {
-    message: '同款在这 某某耳机旗舰款 还有我的主页 @某人',
+    message: '同款 https://b23.tv/mall-abc 感谢 Akira 出镜',
     jump_url: {
-      某某耳机旗舰款: { pc_url: '', extra: { goods_show_type: 1 } },
-      '@某人': { pc_url: 'https://space.bilibili.com/1' },
+      'https://b23.tv/mall-abc': {
+        pc_url: 'https://mall.bilibili.com/x',
+        title: '某某零食',
+        extra: { goods_show_type: 1, is_word_search: false },
+      },
+      Akira: {
+        pc_url: 'https://search.bilibili.com/all?keyword=Akira',
+        title: 'Akira',
+        extra: { goods_show_type: 0, is_word_search: true },
+      },
     },
   };
 
   it('三种返回结构都能取到置顶评论', () => {
-    expect(pinnedFromReply({ top: { upper: { content } } }).pinnedComment).toBe(content.message);
-    expect(pinnedFromReply({ upper: { top: { content } } }).pinnedComment).toBe(content.message);
-    expect(pinnedFromReply({ top_replies: [{ content }] }).pinnedComment).toBe(content.message);
+    expect(pinnedFromReply({ top: { upper: { content } } }).comment).toBe(content.message);
+    expect(pinnedFromReply({ upper: { top: { content } } }).comment).toBe(content.message);
+    expect(pinnedFromReply({ top_replies: [{ content }] }).comment).toBe(content.message);
   });
 
   it('没有置顶评论时返回空', () => {
-    expect(pinnedFromReply({ top: { upper: null }, top_replies: null })).toEqual({});
+    expect(pinnedFromReply({ top: { upper: null }, top_replies: null })).toEqual({
+      links: [],
+      raw: [],
+    });
   });
 
-  it('记录链接片段，并标出平台标记的商品链接', () => {
-    const links = pinnedFromReply({ top: { upper: { content } } }).pinnedLinks;
-    expect(links).toEqual([
-      { keyword: '某某耳机旗舰款', target: '', isGoods: true },
-      { keyword: '@某人', target: 'https://space.bilibili.com/1', isGoods: false },
+  it('记录链接片段，并标出平台自动加的搜索词', () => {
+    expect(pinnedFromReply({ top: { upper: { content } } }).links).toEqual([
+      {
+        keyword: 'https://b23.tv/mall-abc',
+        target: 'https://mall.bilibili.com/x',
+        title: '某某零食',
+        wordSearch: false,
+      },
+      {
+        keyword: 'Akira',
+        target: 'https://search.bilibili.com/all?keyword=Akira',
+        title: 'Akira',
+        wordSearch: true,
+      },
     ]);
+  });
+
+  it('保留原始附加信息，供自检核对', () => {
+    const raw = pinnedFromReply({ top: { upper: { content } } }).raw;
+    expect(raw[1]?.extra).toContain('is_word_search');
   });
 });
 
@@ -111,7 +140,8 @@ describe('页面入口三态（D-13）', () => {
 
   it('认出导航栏但没有入口 → 无', () => {
     const r = entriesFromTexts(new Set(['主页', '动态', '投稿', '收藏']));
-    expect(r).toEqual({ shop: 'no', course: 'no', charge: 'no' });
+    // 充电是页头的按钮，不在导航栏里：页面只能给出「有」，给不出「无」（D-31）
+    expect(r).toEqual({ shop: 'no', course: 'no', charge: 'unknown' });
   });
 
   it('没认出导航栏 → 未能检查，而不是无', () => {
@@ -121,6 +151,6 @@ describe('页面入口三态（D-13）', () => {
 
   it('正文里出现「充电」二字的长句不会被当成入口', () => {
     const r = entriesFromTexts(new Set(['主页', '手机充电测试']));
-    expect(r.charge).toBe('no');
+    expect(r.charge).toBe('unknown');
   });
 });

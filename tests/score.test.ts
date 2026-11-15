@@ -19,7 +19,11 @@ function ev(bvid: string, tier: Tier): Evidence {
   return { bvid, tier, type: 'brand', quote: 'x', field: 'title', source: 'rule', reason: 't' };
 }
 
-function run(n: number, tiers: Tier[], account: AccountFinding[] = []) {
+const allNo: AccountFinding[] = (
+  ['businessContact', 'shop', 'course', 'offsite', 'org', 'charge'] as const
+).map((id) => ({ id, state: 'no' }));
+
+function run(n: number, tiers: Tier[], account: AccountFinding[] = allNo) {
   const vs = videos(n);
   const evidence = tiers.map((t, i) => ev(`BV${i}`, t));
   return score(
@@ -30,10 +34,6 @@ function run(n: number, tiers: Tier[], account: AccountFinding[] = []) {
     { llmUsed: true },
   );
 }
-
-const allNo: AccountFinding[] = (
-  ['businessContact', 'shop', 'course', 'offsite', 'org', 'charge'] as const
-).map((id) => ({ id, state: 'no' }));
 
 describe('内容层公式', () => {
   it('文档中的例子：3 条 2 广告 → r̂ = 0.25', () => {
@@ -146,6 +146,27 @@ describe('账号层', () => {
     expect(unknown.total.point).toBe(known.total.point);
     expect(known.confidence.level).toBe('high');
     expect(unknown.confidence.level).toBe('mid');
+  });
+
+  it('未能检查的项计入区间上界：它可能是「有」（D-29）', () => {
+    const known = run(20, ['A'], allNo);
+    const unknown = run(
+      20,
+      ['A'],
+      allNo.map((a) =>
+        a.id === 'shop' || a.id === 'charge' ? { ...a, state: 'unknown' as const } : a,
+      ),
+    );
+    expect(unknown.account.unknownPoints).toBe(15);
+    expect(unknown.total.low).toBe(known.total.low);
+    expect(unknown.total.high).toBe(known.total.high + 15);
+  });
+
+  it('没有传入的账号层指标视为未能检查', () => {
+    const r = run(20, [], []);
+    expect(r.account.unknownPoints).toBe(40);
+    expect(r.total.point).toBe(0);
+    expect(r.total.high).toBe(40);
   });
 });
 

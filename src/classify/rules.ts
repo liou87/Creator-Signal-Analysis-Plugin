@@ -18,10 +18,17 @@ const NEGATION = /(不是|并非|没有|没|非|无|不|未|零|拒绝|绝不|�
 
 const NEGATION_INSIDE = /不含|不包含|不是|并非|没有|未含|无任何|零广告/;
 
-const SHOP_DOMAINS =
+/** 购物链接：能直接买东西的地址。b23.tv/mall- 是 B 站商品短链（真实页面上观察到，D-30） */
+const SHOP_LINKS =
   'taobao\\.com|tmall\\.com|tb\\.cn|jd\\.com|3\\.cn|yangkeduo\\.com|pinduoduo\\.com|' +
-  'weidian\\.com|youzan\\.com|mall\\.bilibili\\.com|gaoneng\\.bilibili\\.com|' +
-  'show\\.bilibili\\.com|xiaohongshu\\.com/goods|haohuo\\.jinritemai\\.com|v\\.douyin\\.com';
+  'weidian\\.com|youzan\\.com|mall\\.bilibili\\.com|show\\.bilibili\\.com|' +
+  'xiaohongshu\\.com/goods|haohuo\\.jinritemai\\.com|v\\.douyin\\.com|b23\\.tv/mall-';
+
+/** 商业推广链接：B 站广告系统发出的链接。b23.tv/cm- 是其短链（真实页面上观察到，D-30） */
+const AD_LINKS = 'b23\\.tv/cm-|cm\\.bilibili\\.com|gaoneng\\.bilibili\\.com';
+
+const linkPattern = (alternatives: string) =>
+  new RegExp(`(https?://)?[\\w.-]*(${alternatives})[^\\s，。）)】]*`, 'i');
 
 export const RULES: Rule[] = [
   // ── A 明确披露：创作者自己承认 ──────────────────────────────
@@ -59,16 +66,12 @@ export const RULES: Rule[] = [
   },
 
   // ── B 带货转化：推荐 + 购买方式（《互联网广告管理办法》第九条）──
-  {
-    id: 'B1-购物链接',
-    tier: 'B',
-    type: 'brand',
-    pattern: new RegExp(`(https?://)?[\\w.-]*(${SHOP_DOMAINS})[^\\s，。）)】]*`, 'i'),
-  },
+  { id: 'B1-商业推广链接', tier: 'B', type: 'brand', pattern: linkPattern(AD_LINKS) },
+  { id: 'B1-购物链接', tier: 'B', type: 'goods', pattern: linkPattern(SHOP_LINKS) },
   {
     id: 'B2-淘口令',
     tier: 'B',
-    type: 'brand',
+    type: 'goods',
     pattern: /[￥¥€₤₳¢¤฿₵£][A-Za-z0-9]{8,13}[￥¥€₤₳¢¤฿₵£]/,
   },
   {
@@ -80,7 +83,7 @@ export const RULES: Rule[] = [
   {
     id: 'B4-链接引导',
     tier: 'B',
-    type: 'brand',
+    type: 'goods',
     pattern: /(购买|下单|同款|商品|产品|专属|优惠|活动)(链接|地址|入口|通道)|蓝链|(链接|购买方式|同款)[^，。\n]{0,6}(在|见|看|戳)[^，。\n]{0,4}(评论区|置顶|简介)|(评论区|置顶)[^，。\n]{0,8}(链接|下单|购买|领券)/,
     checkNegation: true,
   },
@@ -190,23 +193,31 @@ export function classifyVideoByRules(video: VideoItem, includeSuspected: boolean
     applyRules(video.bvid, field, text, rules),
   );
 
-  // 置顶评论里的商品链接：平台标记为商品，或跳转到购物网站。
-  // 这是结构化事实而不是文字匹配，所以单独处理。
-  const shop = new RegExp(SHOP_DOMAINS, 'i');
-  for (const link of video.pinnedLinks ?? []) {
-    if (!link.isGoods && !shop.test(link.target)) continue;
-    // 引用必须是评论原文的子串，否则不采信
-    if (!link.keyword || !video.pinnedComment?.includes(link.keyword)) continue;
-    found.push({
-      bvid: video.bvid,
-      tier: 'B',
-      type: 'brand',
-      quote: link.keyword,
-      field: 'pinnedComment',
-      source: 'rule',
-      reason: 'B8-评论商品链接',
-    });
-    break;
+  // 置顶评论里显示为文字、但跳转到购物或推广地址的链接（地址本身写在评论里的
+  // 已经被上面的 B1 匹配到了）。只看跳转地址的形态，不看平台的附加字段：
+  // 真实页面验证发现所有链接都带 goods 相关字段，包括自动加的搜索关键词（D-30）。
+  const pinnedAlreadyHit = found.some((e) => e.field === 'pinnedComment' && e.tier === 'B');
+  if (!pinnedAlreadyHit && video.pinnedComment) {
+    const ad = new RegExp(AD_LINKS, 'i');
+    const shop = new RegExp(SHOP_LINKS, 'i');
+    for (const link of video.pinnedLinks ?? []) {
+      if (link.wordSearch) continue; // 平台自动加的搜索词，不是创作者放的链接
+      const isAd = ad.test(link.target);
+      if (!isAd && !shop.test(link.target)) continue;
+      // 引用必须落在评论原文里，否则不采信
+      const index = link.keyword ? video.pinnedComment.indexOf(link.keyword) : -1;
+      if (index < 0) continue;
+      found.push({
+        bvid: video.bvid,
+        tier: 'B',
+        type: isAd ? 'brand' : 'goods',
+        quote: quoteAround(video.pinnedComment, index, link.keyword.length),
+        field: 'pinnedComment',
+        source: 'rule',
+        reason: 'B8-评论商品链接',
+      });
+      break;
+    }
   }
   return found;
 }
