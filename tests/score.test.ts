@@ -69,7 +69,7 @@ describe('内容层公式', () => {
     );
     expect(r.content.certainCount).toBe(1);
     expect(r.content.suspectedCount).toBe(0);
-    expect(r.verdicts[0].tier).toBe('A');
+    expect(r.verdicts[0]?.tier).toBe('A');
   });
 });
 
@@ -175,7 +175,7 @@ describe('取样窗口', () => {
   it('最多 30 条，按发布时间从新到旧', () => {
     const w = selectWindow(videos(50).reverse(), NOW);
     expect(w).toHaveLength(30);
-    expect(w[0].bvid).toBe('BV0');
+    expect(w[0]?.bvid).toBe('BV0');
   });
 
   it('丢弃 12 个月之前的视频', () => {

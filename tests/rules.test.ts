@@ -62,11 +62,39 @@ describe('B 带货转化', () => {
     expect(hits.some((e) => e.tier === 'B' && e.field === 'pinnedComment')).toBe(true);
   });
 
+  it('置顶评论里平台标记的商品链接算带货，引用为评论原文片段', () => {
+    const video = v({
+      title: '开箱',
+      pinnedComment: '同款在这 某某耳机旗舰款',
+      pinnedLinks: [{ keyword: '某某耳机旗舰款', target: '', isGoods: true }],
+    });
+    const hit = classifyVideoByRules(video, false).find((e) => e.reason === 'B8-评论商品链接');
+    expect(hit).toMatchObject({ tier: 'B', field: 'pinnedComment', quote: '某某耳机旗舰款' });
+  });
+
+  it('置顶评论里的普通链接（如 @某人）不算带货', () => {
+    const video = v({
+      title: '日常',
+      pinnedComment: '感谢 @某人 的帮助',
+      pinnedLinks: [{ keyword: '@某人', target: 'https://space.bilibili.com/1', isGoods: false }],
+    });
+    expect(classifyVideoByRules(video, false)).toEqual([]);
+  });
+
+  it('链接片段不在评论原文里时不采信', () => {
+    const video = v({
+      title: '日常',
+      pinnedComment: '今天天气不错',
+      pinnedLinks: [{ keyword: '不存在的片段', target: '', isGoods: true }],
+    });
+    expect(classifyVideoByRules(video, false)).toEqual([]);
+  });
+
   it('变现类型：自营与知识付费区别于品牌合作', () => {
     const self = classifyVideoByRules(v({ desc: '我的淘宝店上新了' }), false);
     const course = classifyVideoByRules(v({ desc: '训练营报名开始' }), false);
-    expect(self[0].type).toBe('self');
-    expect(course[0].type).toBe('knowledge');
+    expect(self[0]?.type).toBe('self');
+    expect(course[0]?.type).toBe('knowledge');
   });
 });
 
@@ -90,8 +118,9 @@ describe('证据可回溯', () => {
   it('引用必须是原文子串', () => {
     const desc = '第一行\n感谢某某科技对本期视频的支持，欢迎三连\n第三行';
     const [e] = classifyVideoByRules(v({ desc }), false);
-    expect(desc).toContain(e.quote);
-    expect(e.quote).not.toContain('\n');
+    expect(e).toBeDefined();
+    expect(desc).toContain(e!.quote);
+    expect(e!.quote).not.toContain('\n');
   });
 });
 

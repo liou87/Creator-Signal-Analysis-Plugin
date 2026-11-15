@@ -24,6 +24,19 @@ export interface VideoItem {
   tags?: string[];
   /** UP 主置顶的评论正文。B 站带货蓝链多在这里（D-12） */
   pinnedComment?: string;
+  /**
+   * 置顶评论里平台渲染成可点击链接的片段。提取层只记录事实，是否算带货由分类层判断。
+   * keyword 是评论正文里的原文片段。
+   */
+  pinnedLinks?: PinnedLink[];
+}
+
+export interface PinnedLink {
+  keyword: string;
+  /** 跳转目标地址，可能为空 */
+  target: string;
+  /** 平台是否把它标记为商品链接 */
+  isGoods: boolean;
 }
 
 /** 提取层对每个数据源的自检结果（D-17） */

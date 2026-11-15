@@ -101,7 +101,8 @@ export const RULES: Rule[] = [
     id: 'B7-充电专属',
     tier: 'B',
     type: 'fan',
-    pattern: /充电专属|包月充电[^，。\n]{0,8}(可看|观看|解锁)|(专属|付费)视频/,
+    pattern: /充电专属|包月充电[^，。\n]{0,8}(可看|观看|解锁)|付费(视频|内容)/,
+    checkNegation: true,
   },
 
   // ── C 疑似软广（无模型时的退化方案）：行动引导但无披露无链接（D-08）──
@@ -185,7 +186,27 @@ function applyRules(
  */
 export function classifyVideoByRules(video: VideoItem, includeSuspected: boolean): Evidence[] {
   const rules = includeSuspected ? RULES : RULES.filter((r) => r.tier !== 'C');
-  return videoFields(video).flatMap(({ field, text }) =>
+  const found = videoFields(video).flatMap(({ field, text }) =>
     applyRules(video.bvid, field, text, rules),
   );
+
+  // 置顶评论里的商品链接：平台标记为商品，或跳转到购物网站。
+  // 这是结构化事实而不是文字匹配，所以单独处理。
+  const shop = new RegExp(SHOP_DOMAINS, 'i');
+  for (const link of video.pinnedLinks ?? []) {
+    if (!link.isGoods && !shop.test(link.target)) continue;
+    // 引用必须是评论原文的子串，否则不采信
+    if (!link.keyword || !video.pinnedComment?.includes(link.keyword)) continue;
+    found.push({
+      bvid: video.bvid,
+      tier: 'B',
+      type: 'brand',
+      quote: link.keyword,
+      field: 'pinnedComment',
+      source: 'rule',
+      reason: 'B8-评论商品链接',
+    });
+    break;
+  }
+  return found;
 }

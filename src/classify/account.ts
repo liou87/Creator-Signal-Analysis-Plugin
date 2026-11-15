@@ -15,7 +15,7 @@ function firstMatch(text: string, pattern: RegExp): string | undefined {
   const m = pattern.exec(text);
   if (!m) return undefined;
   const start = Math.max(0, m.index - 10);
-  return text.slice(start, m.index + m[0].length + 20).split('\n')[0].trim();
+  return (text.slice(start, m.index + m[0].length + 20).split('\n')[0] ?? '').trim();
 }
 
 /** 文本类信号：简介取到了才能说「无」，没取到只能说「未能检查」 */
