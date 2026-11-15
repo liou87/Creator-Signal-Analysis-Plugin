@@ -39,6 +39,14 @@ export interface PinnedLink {
   isGoods: boolean;
 }
 
+/**
+ * 视频列表从哪里来：
+ *   api  接口返回的最近投稿，可以认为是完整的
+ *   page 只是当前页面上看得到的视频，不一定是最近的投稿
+ *   none 所有路径都没走通
+ */
+export type VideoSource = 'api' | 'page' | 'none';
+
 /** 提取层对每个数据源的自检结果（D-17） */
 export interface SourceStatus {
   item: string;
@@ -59,6 +67,8 @@ export interface CreatorSnapshot {
   hasShop: Tri;
   hasCourse: Tri;
   videos: VideoItem[];
+  /** 视频列表的来源。决定了「取到 0 条」该如何解读（D-27） */
+  videoSource: VideoSource;
   /** 采集时间，Unix 毫秒。评分引擎用它而不是系统时钟，保证可复现 */
   capturedAt: number;
   sources: SourceStatus[];
@@ -124,6 +134,16 @@ export interface Report {
     ratio: number;
     /** 样本覆盖的时间段，Unix 秒 */
     span?: { from: number; to: number };
+    /**
+     * 内容层是否评估得了。取不到视频不等于没有商业内容（D-27）。
+     * 为 false 时 total 与 band 没有意义，界面不得把它们当作指数展示
+     */
+    assessed: boolean;
+    source: VideoSource;
+    /** 取样之前取到的视频总数 */
+    fetched: number;
+    /** 取到的视频里最新一条的发布时间，Unix 秒 */
+    latestPubdate?: number;
   };
   account: {
     score: number;

@@ -70,7 +70,10 @@ function bandOf(point: number, cfg: ScoringConfig): Band {
 }
 
 export function score(
-  snapshot: Pick<CreatorSnapshot, 'mid' | 'name' | 'capturedAt' | 'sources'>,
+  snapshot: Pick<
+    CreatorSnapshot,
+    'mid' | 'name' | 'capturedAt' | 'sources' | 'videos' | 'videoSource'
+  >,
   /** 已经过 selectWindow 的视频 */
   videos: VideoItem[],
   evidence: Evidence[],
@@ -119,6 +122,14 @@ export function score(
     ? { from: Math.min(...dates), to: Math.max(...dates) }
     : undefined;
 
+  // 取不到视频不等于没有商业内容（D-27）。只有接口明确返回了最近投稿，
+  // 「窗口内 0 条」才能解读为「最近没有投稿」；否则内容层是未能评估。
+  const allDates = snapshot.videos
+    .map((v) => v.pubdate)
+    .filter((d): d is number => d !== undefined);
+  const latestPubdate = allDates.length ? Math.max(...allDates) : undefined;
+  const assessed = n > 0 || snapshot.videoSource === 'api';
+
   // 置信度：样本太少为低；有未能检查的项为中；否则为高
   const reasons: string[] = [];
   let level: Confidence = 'high';
@@ -127,7 +138,14 @@ export function score(
     level = 'mid';
     reasons.push(`未能检查：${unknownItems.map((i) => i.label).join('、')}`);
   }
-  if (n < cfg.confidence.minSample) {
+  if (snapshot.videoSource === 'page' && n > 0) {
+    level = 'mid';
+    reasons.push('视频列表来自当前页面上看得到的部分，不一定是最近的投稿');
+  }
+  if (!assessed) {
+    level = 'low';
+    reasons.push('没有取到可用的视频，内容层未能评估');
+  } else if (n < cfg.confidence.minSample) {
     level = 'low';
     reasons.push(`样本仅 ${n} 条视频（少于 ${cfg.confidence.minSample} 条）`);
   }
@@ -150,6 +168,10 @@ export function score(
       suspectedCount,
       ratio: point.ratio,
       span,
+      assessed,
+      source: snapshot.videoSource,
+      fetched: snapshot.videos.length,
+      latestPubdate,
     },
     account: { score: accountScore, max: accountMax, items },
     typeCounts,

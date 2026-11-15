@@ -1,4 +1,4 @@
-import type { CreatorSnapshot, SourceStatus, Tri, VideoItem } from '../types';
+import type { CreatorSnapshot, SourceStatus, Tri, VideoItem, VideoSource } from '../types';
 import { midFromUrl, nameFromTitle } from './identify';
 import { keysFromNav, signQuery, type WbiKeys } from './wbi';
 
@@ -154,36 +154,102 @@ export function videosFromDom(root: ParentNode): VideoItem[] {
   return [...seen.values()].filter((v) => v.title.length > 0).slice(0, MAX_VIDEOS);
 }
 
-async function loadVideoList(mid: string, keys: WbiKeys | null, c: Collector): Promise<VideoItem[]> {
+interface RecArchives {
+  archives?: Array<{ bvid: string; title: string; pubdate?: number }>;
+}
+
+/**
+ * 空间页在页面里内嵌了一个访问令牌，页面自己请求投稿列表时会带上它。
+ * 这里只是读出来原样带上，取不到就不带。
+ */
+function webIdFromPage(): string | null {
+  try {
+    const raw = document.getElementById('__RENDER_DATA__')?.textContent;
+    if (!raw) return null;
+    const data = JSON.parse(decodeURIComponent(raw)) as { access_id?: unknown };
+    return typeof data.access_id === 'string' ? data.access_id : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 按发布时间从新到旧取前 MAX_VIDEOS 条。没有发布时间的排在最后 */
+function newest(list: VideoItem[]): VideoItem[] {
+  return [...list].sort((a, b) => (b.pubdate ?? 0) - (a.pubdate ?? 0)).slice(0, MAX_VIDEOS);
+}
+
+function describeList(list: VideoItem[]): string {
+  const dates = list.map((v) => v.pubdate).filter((d): d is number => d !== undefined);
+  if (dates.length === 0) return `${list.length} 条`;
+  const day = (s: number) => new Date(s * 1000).toISOString().slice(0, 10);
+  return `${list.length} 条，发布于 ${day(Math.min(...dates))} 至 ${day(Math.max(...dates))}`;
+}
+
+/**
+ * 视频列表依次尝试三条路径。前两条是接口，返回的是最近投稿；
+ * 第三条只是当前页面上看得到的视频，不一定是最近的（D-27）。
+ */
+async function loadVideoList(
+  mid: string,
+  keys: WbiKeys | null,
+  c: Collector,
+): Promise<{ list: VideoItem[]; source: VideoSource }> {
   if (keys) {
+    const webId = webIdFromPage();
+    const path = `接口 arc/search${webId ? '（带页面令牌）' : '（页面里没有令牌）'}`;
     try {
-      const d = await getJson<ArcSearch>(
-        signed(
-          '/x/space/wbi/arc/search',
-          { mid, ps: MAX_VIDEOS, pn: 1, order: 'pubdate', platform: 'web' },
-          keys,
-        ),
-      );
-      const list = d.list?.vlist ?? [];
-      c.ok('视频列表', '接口 arc/search', `${list.length} 条`);
-      return list.map((v) => ({
+      const params: Record<string, string | number> = {
+        mid,
+        ps: MAX_VIDEOS,
+        pn: 1,
+        order: 'pubdate',
+        platform: 'web',
+      };
+      if (webId) params.w_webid = webId;
+      const d = await getJson<ArcSearch>(signed('/x/space/wbi/arc/search', params, keys));
+      const list = (d.list?.vlist ?? []).map((v) => ({
         bvid: v.bvid,
         title: v.title,
         url: videoUrl(v.bvid),
         pubdate: v.created,
         desc: v.description,
       }));
+      c.ok('视频列表', path, describeList(list));
+      return { list: newest(list), source: 'api' };
     } catch (e) {
-      c.fail('视频列表', '接口 arc/search', e);
+      c.fail('视频列表', path, e);
     }
   }
-  const list = videosFromDom(document);
-  if (list.length > 0) {
-    c.ok('视频列表', '页面链接（备用）', `${list.length} 条，仅当前页面可见的视频`);
-  } else {
-    c.fail('视频列表', '页面链接（备用）', '页面上没有找到视频链接，请切到「投稿」标签页后重试');
+
+  try {
+    // 另一个返回投稿的公开接口，不需要签名。多取一些再按时间排序，不依赖它的默认顺序
+    const d = await getJson<RecArchives>(
+      `${API}/x/series/recArchivesByKeywords?mid=${mid}&keywords=&ps=100&pn=1`,
+    );
+    const list = (d.archives ?? []).map((v) => ({
+      bvid: v.bvid,
+      title: v.title,
+      url: videoUrl(v.bvid),
+      pubdate: v.pubdate,
+    }));
+    c.ok('视频列表', '接口 recArchivesByKeywords（备用）', describeList(list));
+    return { list: newest(list), source: 'api' };
+  } catch (e) {
+    c.fail('视频列表', '接口 recArchivesByKeywords（备用）', e);
   }
-  return list;
+
+  const list = videosFromDom(document);
+  const where = `当前页面路径 ${location.pathname}`;
+  if (list.length > 0) {
+    c.ok(
+      '视频列表',
+      '页面链接（备用）',
+      `${list.length} 条，只是当前页面上看得到的视频；${where}`,
+    );
+    return { list, source: 'page' };
+  }
+  c.fail('视频列表', '页面链接（备用）', `页面上没有找到视频链接；${where}`);
+  return { list: [], source: 'none' };
 }
 
 // ── 单条视频的详情 ──────────────────────────────────────────
@@ -360,7 +426,7 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
   const profile = await loadProfile(mid, keys, c);
 
   onProgress('读取视频列表');
-  const list = await loadVideoList(mid, keys, c);
+  const { list, source: videoSource } = await loadVideoList(mid, keys, c);
 
   const stats: DetailStats = {
     view: 0,
@@ -426,6 +492,7 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     hasShop: entries.shop,
     hasCourse: entries.course,
     videos,
+    videoSource,
     capturedAt: Date.now(),
     sources: c.sources,
   };

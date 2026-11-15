@@ -51,7 +51,7 @@ export function classifyAccount(
   }
 
   const entry = (state: Tri, name: string) =>
-    state === 'yes' ? { state, basis: `页面存在${name}入口` } : { state };
+    state === 'yes' ? { state, basis: `接口或页面显示已开通${name}` } : { state };
 
   return [
     { id: 'businessContact', ...business },

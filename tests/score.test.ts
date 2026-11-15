@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { score, selectWindow } from '../src/scoring/score';
 import { DEFAULT_CONFIG } from '../src/scoring/config';
-import type { AccountFinding, Evidence, Tier, VideoItem } from '../src/types';
+import type { AccountFinding, Evidence, Tier, VideoItem, VideoSource } from '../src/types';
 
 const NOW = Date.UTC(2026, 10, 15);
 const DAY = 86400;
@@ -23,7 +23,7 @@ function run(n: number, tiers: Tier[], account: AccountFinding[] = []) {
   const vs = videos(n);
   const evidence = tiers.map((t, i) => ev(`BV${i}`, t));
   return score(
-    { mid: '1', name: '测试', capturedAt: NOW, sources: [] },
+    { mid: '1', name: '测试', capturedAt: NOW, sources: [], videos: vs, videoSource: 'api' },
     vs,
     evidence,
     account,
@@ -61,7 +61,7 @@ describe('内容层公式', () => {
   it('一条视频同时命中多档时取最高档，只算一次', () => {
     const vs = videos(10);
     const r = score(
-      { mid: '1', name: 't', capturedAt: NOW, sources: [] },
+      { mid: '1', name: 't', capturedAt: NOW, sources: [], videos: vs, videoSource: 'api' },
       vs,
       [ev('BV0', 'C'), ev('BV0', 'A'), ev('BV0', 'B')],
       [],
@@ -146,6 +146,48 @@ describe('账号层', () => {
     expect(unknown.total.point).toBe(known.total.point);
     expect(known.confidence.level).toBe('high');
     expect(unknown.confidence.level).toBe('mid');
+  });
+});
+
+describe('取不到视频不等于没有商业内容（D-27）', () => {
+  const old: VideoItem[] = [
+    { bvid: 'old1', title: '', url: '', pubdate: NOW / 1000 - 500 * DAY },
+    { bvid: 'old2', title: '', url: '', pubdate: NOW / 1000 - 700 * DAY },
+  ];
+  const runWith = (all: VideoItem[], source: VideoSource) =>
+    score(
+      { mid: '1', name: 't', capturedAt: NOW, sources: [], videos: all, videoSource: source },
+      selectWindow(all, NOW),
+      [],
+      allNo,
+      { llmUsed: false },
+    );
+
+  it('所有路径都没取到视频 → 内容层未能评估，置信度为低', () => {
+    const r = runWith([], 'none');
+    expect(r.content.assessed).toBe(false);
+    expect(r.confidence.level).toBe('low');
+    expect(r.confidence.reasons.join()).toContain('未能评估');
+  });
+
+  it('只从页面读到旧视频 → 未能评估：页面上的不一定是最新投稿', () => {
+    const r = runWith(old, 'page');
+    expect(r.content.sampleSize).toBe(0);
+    expect(r.content.fetched).toBe(2);
+    expect(r.content.assessed).toBe(false);
+  });
+
+  it('接口返回了投稿但都在窗口之外 → 可以评估，结论是最近没有投稿', () => {
+    const r = runWith(old, 'api');
+    expect(r.content.assessed).toBe(true);
+    expect(r.content.point).toBe(0);
+    expect(r.content.latestPubdate).toBe(old[0]!.pubdate);
+  });
+
+  it('从页面读到窗口内的视频 → 可以评估，但置信度最多为中', () => {
+    const r = runWith(videos(20), 'page');
+    expect(r.content.assessed).toBe(true);
+    expect(r.confidence.level).toBe('mid');
   });
 });
 

@@ -33,6 +33,7 @@ const snapshot: CreatorSnapshot = {
   hasCharge: 'yes',
   hasShop: 'no',
   hasCourse: 'unknown',
+  videoSource: 'api',
   capturedAt: NOW,
   sources: [{ item: '视频列表', path: '接口 arc/search', ok: true, detail: '20 条' }],
   videos: [
@@ -92,5 +93,29 @@ describe('端到端', () => {
     // 被否定的「恰饭」不出现在依据里
     expect(html).not.toContain('这期不是恰饭');
     expect(html).toContain('未能检查');
+    // 取到 21 条，窗口内 20 条，两个数字都要让人看到
+    expect(html).toContain('本次取到 21 条');
+  });
+
+  it('取不到视频时不给指数，并把自检展开（D-27）', async () => {
+    const failed: CreatorSnapshot = {
+      ...snapshot,
+      videos: [],
+      videoSource: 'none',
+      sources: [{ item: '视频列表', path: '接口 arc/search', ok: false, detail: 'code -352' }],
+    };
+    const report = score(failed, [], [], classifyAccount(failed, []), { llmUsed: false });
+    const html = renderToStaticMarkup(<ReportView report={report} />);
+
+    expect(html).toContain('本次无法给出指数');
+    expect(html).toContain('没有取到这位创作者的视频列表');
+    // 不能出现分档结论和总分算式
+    expect(html).not.toContain('商业化程度：');
+    expect(html).not.toContain('<h3>总分</h3>');
+    // 账号层结果仍然展示
+    expect(html).toContain('biz@example.com');
+    // 自检默认展开，失败原因可见
+    expect(html).toContain('<details open="">');
+    expect(html).toContain('code -352');
   });
 });

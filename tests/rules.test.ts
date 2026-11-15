@@ -134,6 +134,7 @@ describe('账号层', () => {
     hasShop: 'no',
     hasCourse: 'no',
     videos: [],
+    videoSource: 'api',
     capturedAt: 0,
     sources: [],
   };
