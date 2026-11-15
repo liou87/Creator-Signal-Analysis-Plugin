@@ -31,7 +31,34 @@
 
 ## 命令
 
-（脚手架完成后补充）
+```bash
+npm test           # 单元测试（Vitest）。改评分或规则后必须跑
+npm run typecheck  # 类型检查
+npm run build      # 构建到 .output/chrome-mv3，在 chrome://extensions 里加载这个目录
+npm run dev        # 开发模式
+```
+
+提交前三项都要通过：`npm test && npm run typecheck && npm run build`。
+
+## 目录地图
+
+```
+entrypoints/        插件入口。background 只负责打开侧边栏；content 在空间页里跑提取
+src/types.ts        三个核心数据结构：CreatorSnapshot → Evidence[] → Report
+src/extract/        B 站数据提取（接口为主、页面为辅）与 WBI 签名
+src/classify/       rules.ts 规则；account.ts 账号层；llm.ts 模型；index.ts 入口
+src/scoring/        config.ts 全部参数；score.ts 评分公式（纯函数）
+src/pipeline.ts     侧边栏一侧的流程编排
+src/ui/             侧边栏界面
+tests/              pipeline.test.tsx 是端到端算例，改公式时先看它
+```
+
+## 当前最大的未知数
+
+数据提取**没有在真实浏览器里验证过**（开发环境直接请求 B 站接口会被风控拦截，见 D-17）。
+接口路径、返回字段、页面文字的判断都来自公开资料和经验，可能与现状不符。
+验证方法：加载插件，在真实空间页上跑一次，看报告底部的「数据来源自检」。
+验证结果要写回 `docs/ARCHITECTURE.md` 的「数据来源」表。
 
 ## 约定
 
