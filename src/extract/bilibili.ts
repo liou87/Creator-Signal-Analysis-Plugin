@@ -1,4 +1,5 @@
 import type { CreatorSnapshot, SourceStatus, Tri, VideoItem } from '../types';
+import { midFromUrl, nameFromTitle } from './identify';
 import { keysFromNav, signQuery, type WbiKeys } from './wbi';
 
 /**
@@ -31,17 +32,6 @@ async function getJson<T>(url: string): Promise<T> {
     throw new Error(`code ${json.code} ${json.message ?? ''}`.trim());
   }
   return json.data;
-}
-
-export function midFromUrl(url: string): string | null {
-  const m = /^https?:\/\/space\.bilibili\.com\/(\d+)/.exec(url);
-  return m?.[1] ?? null;
-}
-
-/** 页面上的备用昵称：标题形如「某某的个人空间-某某个人主页-哔哩哔哩视频」 */
-export function nameFromTitle(title: string): string | null {
-  const m = /^(.+?)的个人空间/.exec(title);
-  return m?.[1] ?? null;
 }
 
 class Collector {
@@ -115,9 +105,24 @@ async function loadProfile(mid: string, keys: WbiKeys | null, c: Collector): Pro
     }
   }
   const name = nameFromTitle(document.title);
-  if (name) c.ok('昵称', '页面标题（备用）', '简介与认证未能取到');
-  else c.fail('昵称', '页面标题（备用）', '标题格式不符');
-  return { name, bio: null, officialTitle: null, charge: 'unknown' };
+  if (name) c.ok('昵称', '页面标题（备用）');
+  else c.fail('昵称', '页面标题（备用）', `标题格式不符：「${document.title.slice(0, 40)}」`);
+
+  const meta = document.querySelector('meta[name="description"]')?.getAttribute('content') ?? '';
+  const bio = bioFromMetaDescription(meta);
+  if (bio !== null) c.ok('简介', '页面描述信息（备用）', '认证未能取到');
+  else c.fail('简介', '页面描述信息（备用）', `格式不符：「${meta.slice(0, 40)}」`);
+
+  return { name, bio, officialTitle: null, charge: 'unknown' };
+}
+
+/**
+ * 备用简介：空间页的描述信息形如「昵称，简介内容；昵称的主页、动态、视频…」。
+ * 格式不符时返回 null（未取到），不去猜。导出以便测试
+ */
+export function bioFromMetaDescription(content: string): string | null {
+  const m = /^(.+?)，([\s\S]*?)；\1的主页/.exec(content);
+  return m ? (m[2] ?? '').trim() : null;
 }
 
 // ── 视频列表 ────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { classifyAccount } from './classify/account';
 import { classifyVideos } from './classify';
 import type { KeyValueStore, LlmConfig } from './classify/llm';
+import { midFromUrl } from './extract/identify';
 import type { ContentRequest, ContentResponse } from './messages';
 import { score, selectWindow } from './scoring/score';
 import type { CreatorSnapshot, Report } from './types';
@@ -71,7 +72,7 @@ export interface Identity {
 export async function identifyActiveTab(): Promise<Identity | null> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   // 只对 B 站空间页有主机权限，其他页面的 url 取不到
-  const mid = /^https?:\/\/space\.bilibili\.com\/(\d+)/.exec(tab?.url ?? '')?.[1];
+  const mid = midFromUrl(tab?.url ?? '');
   if (!tab?.id || !mid) return null;
   let name: string | null = null;
   try {

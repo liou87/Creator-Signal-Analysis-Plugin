@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bioFromMetaDescription,
   entriesFromTexts,
-  midFromUrl,
-  nameFromTitle,
   pinnedFromReply,
 } from '../src/extract/bilibili';
+import { midFromUrl, nameFromTitle } from '../src/extract/identify';
 import { keysFromNav, mixinKey, signQuery } from '../src/extract/wbi';
 
 describe('WBI 签名', () => {
@@ -38,14 +38,40 @@ describe('识别创作者', () => {
     expect(midFromUrl('https://space.bilibili.com/123456/upload/video?x=1')).toBe('123456');
   });
 
+  // 2026-11-15 首次在真实页面上验证时发现：地址里 UID 前可能有语言前缀
+  it('地址带语言前缀时也能取到 UID', () => {
+    expect(
+      midFromUrl('https://space.bilibili.com/zh-Hans/447317111?spm_id_from=333.788.upinfo.head.click'),
+    ).toBe('447317111');
+    expect(midFromUrl('https://space.bilibili.com/zh-Hant/447317111/upload/video')).toBe('447317111');
+    expect(midFromUrl('https://space.bilibili.com/en/447317111')).toBe('447317111');
+  });
+
   it('不是空间页时返回 null', () => {
     expect(midFromUrl('https://www.bilibili.com/video/BV1xx411c7mD')).toBeNull();
     expect(midFromUrl('https://example.com/123')).toBeNull();
+    expect(midFromUrl('https://space.bilibili.com/')).toBeNull();
+    // 路径里别处出现的数字不能被当成 UID
+    expect(midFromUrl('https://space.bilibili.com/zh-Hans/')).toBeNull();
+    expect(midFromUrl('https://space.bilibili.com/a/b/123')).toBeNull();
   });
 
   it('从页面标题取昵称', () => {
     expect(nameFromTitle('某某的个人空间-某某个人主页-哔哩哔哩视频')).toBe('某某');
     expect(nameFromTitle('哔哩哔哩')).toBeNull();
+  });
+
+  it('从页面描述信息取简介（备用路径）', () => {
+    expect(
+      bioFromMetaDescription(
+        '某某，美食的背后，是文化和故事。商务合作请联系vx：abc；某某的主页、动态、视频、专栏、频道、收藏、订阅等。',
+      ),
+    ).toBe('美食的背后，是文化和故事。商务合作请联系vx：abc');
+  });
+
+  it('描述信息格式不符时返回 null，不去猜', () => {
+    expect(bioFromMetaDescription('哔哩哔哩，你感兴趣的视频都在B站')).toBeNull();
+    expect(bioFromMetaDescription('')).toBeNull();
   });
 });
 

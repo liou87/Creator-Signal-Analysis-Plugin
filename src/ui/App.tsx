@@ -15,20 +15,37 @@ export function App() {
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
 
-  const refresh = useCallback(() => {
-    identifyActiveTab().then(setIdentity, () => setIdentity(null));
+  const [checkNote, setCheckNote] = useState('');
+
+  /** @param manual 用户手动点的「重新检测」。手动检测无论结果如何都要给出反馈 */
+  const refresh = useCallback((manual: boolean) => {
+    const note = (text: string) => {
+      if (manual) setCheckNote(`${new Date().toLocaleTimeString('zh-CN')} ${text}`);
+    };
+    identifyActiveTab().then(
+      (id) => {
+        setIdentity(id);
+        if (id) setCheckNote('');
+        else note('已重新检测：当前标签页的地址不是 UP 主空间页。');
+      },
+      (e) => {
+        setIdentity(null);
+        note(`检测出错：${e instanceof Error ? e.message : String(e)}`);
+      },
+    );
   }, []);
 
   // 用户切换标签页或在空间页内跳转时，重新识别当前创作者
   useEffect(() => {
-    refresh();
+    const auto = () => refresh(false);
+    auto();
     const onUpdated = (_id: number, info: { status?: string; url?: string }) => {
-      if (info.status === 'complete' || info.url) refresh();
+      if (info.status === 'complete' || info.url) auto();
     };
-    browser.tabs.onActivated.addListener(refresh);
+    browser.tabs.onActivated.addListener(auto);
     browser.tabs.onUpdated.addListener(onUpdated);
     return () => {
-      browser.tabs.onActivated.removeListener(refresh);
+      browser.tabs.onActivated.removeListener(auto);
       browser.tabs.onUpdated.removeListener(onUpdated);
     };
   }, [refresh]);
@@ -71,9 +88,10 @@ export function App() {
         ) : (
           <div className="muted">
             请在 B 站 UP 主空间页（space.bilibili.com/…）打开本面板。
-            <button className="link" onClick={refresh}>
+            <button className="link" onClick={() => refresh(true)}>
               重新检测
             </button>
+            {checkNote && <div role="status">{checkNote}</div>}
           </div>
         )}
       </section>

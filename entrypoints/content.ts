@@ -1,6 +1,7 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { browser } from 'wxt/browser';
-import { extractSnapshot, midFromUrl, nameFromTitle } from '../src/extract/bilibili';
+import { extractSnapshot } from '../src/extract/bilibili';
+import { midFromUrl, nameFromTitle } from '../src/extract/identify';
 import type { ContentRequest, ContentResponse } from '../src/messages';
 
 // 内容脚本运行在空间页里，负责读取页面和请求 B 站公开接口。
