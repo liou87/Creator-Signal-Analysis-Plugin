@@ -23,7 +23,7 @@ export interface ScoringConfig {
     /** 占比达到多少算内容层满分。初值为假设，校准后取样本 P90（D-05） */
     ratioCap: number;
   };
-  /** 账号层各指标分值。强 = 10，弱 = 5，只主张顺序（D-07） */
+  /** 账号层各指标分值。强 = 11，弱 = 6，只主张「强高于弱」，不主张比例（D-07、D-40） */
   account: Record<AccountSignalId, { label: string; points: number }>;
   /** 三档分界：point < low 为低，>= high 为高（D-15） */
   bands: { mid: number; high: number };
@@ -43,12 +43,11 @@ export const DEFAULT_CONFIG: ScoringConfig = {
     ratioCap: 0.5,
   },
   account: {
-    businessContact: { label: '商务合作联系方式', points: 10 },
-    shop: { label: '小店 / 橱窗', points: 10 },
-    course: { label: '付费课程', points: 5 },
-    offsite: { label: '站外导流', points: 5 },
-    org: { label: '机构 / MCN', points: 5 },
-    charge: { label: '充电', points: 5 },
+    businessContact: { label: '商务合作联系方式', points: 11 },
+    shop: { label: '店铺', points: 11 },
+    course: { label: '付费课程', points: 6 },
+    paidCommunity: { label: '站外付费社群', points: 6 },
+    charge: { label: '充电', points: 6 },
   },
   bands: { mid: 33, high: 66 },
   confidence: { minSample: 10 },

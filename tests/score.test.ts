@@ -20,7 +20,7 @@ function ev(bvid: string, tier: Tier): Evidence {
 }
 
 const allNo: AccountFinding[] = (
-  ['businessContact', 'shop', 'course', 'offsite', 'org', 'charge'] as const
+  ['businessContact', 'shop', 'course', 'paidCommunity', 'charge'] as const
 ).map((id) => ({ id, state: 'no' }));
 
 function run(n: number, tiers: Tier[], account: AccountFinding[] = allNo) {
@@ -126,6 +126,12 @@ describe('单调性：证据越多分数不降', () => {
 });
 
 describe('账号层', () => {
+  it('强项高于弱项（只主张顺序，D-07）', () => {
+    const a = DEFAULT_CONFIG.account;
+    const weak = Math.max(a.course.points, a.paidCommunity.points, a.charge.points);
+    expect(Math.min(a.businessContact.points, a.shop.points)).toBeGreaterThan(weak);
+  });
+
   it('全部命中时为 40 分', () => {
     const r = run(
       10,
@@ -157,9 +163,10 @@ describe('账号层', () => {
         a.id === 'shop' || a.id === 'charge' ? { ...a, state: 'unknown' as const } : a,
       ),
     );
-    expect(unknown.account.unknownPoints).toBe(15);
+    const pts = DEFAULT_CONFIG.account.shop.points + DEFAULT_CONFIG.account.charge.points;
+    expect(unknown.account.unknownPoints).toBe(pts);
     expect(unknown.total.low).toBe(known.total.low);
-    expect(unknown.total.high).toBe(known.total.high + 15);
+    expect(unknown.total.high).toBe(known.total.high + pts);
   });
 
   it('没有传入的账号层指标视为未能检查', () => {

@@ -18,17 +18,52 @@ describe('A 明确披露', () => {
     ['感谢 XX 提供的样机', 'A2-感谢赞助'],
     ['本次手机由品牌方提供', 'A3-品牌方提供'],
     ['本期由某某赞助播出', 'A4-合作标注'],
-    ['这期是恰饭视频，大家多多支持', 'A5-恰饭'],
   ])('%s', (desc, rule) => {
     expect(tiers(v({ desc }))).toContain(rule);
   });
 });
 
+describe('法定广告提示语（D-42）', () => {
+  it.each([
+    // 2026-11-16 在大物是也一条带货视频的简介里看到的原文
+    '请仔细阅读产品说明书或者在医务人员的指导下购买和使用。',
+    '请仔细阅读产品说明书或在医务人员指导下购买、使用',
+    '请按药品说明书或者在药师指导下购买和使用',
+    '本品不能代替药物',
+  ])('%s', (desc) => {
+    expect(tiers(v({ desc }), false)).toContain('A6-法定提示语');
+  });
+
+  it('只是提到说明书，不算', () => {
+    expect(tiers(v({ desc: '使用前请仔细阅读产品说明书' }))).toEqual([]);
+  });
+});
+
+describe('恰饭用语只算疑似（D-41）', () => {
+  it('自己承认恰饭：疑似，不是明确披露', () => {
+    const hits = tiers(v({ desc: '这期是恰饭视频，大家多多支持' }));
+    expect(hits).toContain('C2-恰饭用语');
+    expect(hits.filter((r) => r.startsWith('A'))).toEqual([]);
+  });
+
+  it('讲商单这个话题的视频（真实例子）不会被当成明确披露', () => {
+    const video = v({
+      title: '800w粉丝，我们是如何在B站做商单视频的？',
+      desc: 'UP主在B站是怎么赚钱的？我们决定专门出一期视频，带大家来看完整的恰饭赚钱流程',
+    });
+    expect(tiers(video).filter((r) => r.startsWith('A') || r.startsWith('B'))).toEqual([]);
+  });
+
+  it('有模型时不用关键词，交给模型判断', () => {
+    expect(tiers(v({ desc: '这期恰个饭' }), false)).toEqual([]);
+  });
+});
+
 describe('否定与误判（D-09）', () => {
   it.each(['这期不是恰饭', '本期没有恰饭，纯分享', '本视频不含任何广告', '无广告，自费购买'])(
-    '%s → 不算披露',
+    '%s → 不算披露，也不算疑似',
     (desc) => {
-      expect(tiers(v({ desc })).filter((r) => r.startsWith('A'))).toEqual([]);
+      expect(tiers(v({ desc }))).toEqual([]);
     },
   );
 
@@ -204,7 +239,8 @@ describe('账号层', () => {
 
   it('简介没取到时为「未能检查」，而不是「无」（D-13）', () => {
     expect(state({ ...base, bio: null }, 'businessContact')).toBe('unknown');
-    expect(state({ ...base, bio: null }, 'offsite')).toBe('unknown');
+    expect(state({ ...base, bio: null }, 'paidCommunity')).toBe('unknown');
+    expect(state({ ...base, bio: null }, 'shop')).toBe('unknown');
   });
 
   it('视频简介脚注反复出现商务联系方式，也算', () => {
@@ -215,10 +251,25 @@ describe('账号层', () => {
     expect(state({ ...base, bio: null }, 'businessContact', vs)).toBe('yes');
   });
 
-  it('站外导流与机构', () => {
-    expect(state({ ...base, bio: '公众号：某某' }, 'offsite')).toBe('yes');
-    expect(state({ ...base, bio: '', officialTitle: '某某公司官方账号' }, 'org')).toBe('yes');
-    expect(state({ ...base, bio: '', officialTitle: 'bilibili 知名UP主' }, 'org')).toBe('no');
+  it('店铺看简介，站内站外都算（D-40）', () => {
+    // 2026-11-16 影视飓风空间页简介的原文
+    const bio =
+      '无限进步！｜商务合作请联系邮箱：bd@ysjf.com（邮件中麻烦备注公司、咨询内容）｜店铺名：影视飓风';
+    expect(state({ ...base, bio }, 'shop')).toBe('yes');
+    expect(state({ ...base, bio }, 'businessContact')).toBe('yes');
+    expect(state({ ...base, bio: '淘宝搜索同名店铺' }, 'shop')).toBe('yes');
+    expect(state({ ...base, bio: '一个爱打游戏的人' }, 'shop')).toBe('no');
+  });
+
+  it('站外付费社群；只拉关注的不算（D-40）', () => {
+    expect(state({ ...base, bio: '知识星球：某某研究所' }, 'paidCommunity')).toBe('yes');
+    expect(state({ ...base, bio: '公众号：某某' }, 'paidCommunity')).toBe('no');
+    expect(state({ ...base, bio: '公众号：某某' }, 'shop')).toBe('no');
+  });
+
+  it('机构认证不再是账号层指标（D-40）', () => {
+    const ids = classifyAccount({ ...base, officialTitle: '某某公司官方账号' }, []).map((a) => a.id);
+    expect(ids).not.toContain('org');
   });
 
   it('入口类信号直接取自快照', () => {

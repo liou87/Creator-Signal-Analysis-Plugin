@@ -101,12 +101,15 @@ export interface Evidence {
   reason: string;
 }
 
+/**
+ * 账号层指标。每一项都对应一种付钱方（品牌方、买家、粉丝），见 docs/DESIGN.md 第 1 节。
+ * 机构 / MCN 不对应任何一种付钱方，已删除（D-40）
+ */
 export type AccountSignalId =
   | 'businessContact'
   | 'shop'
   | 'course'
-  | 'offsite'
-  | 'org'
+  | 'paidCommunity'
   | 'charge';
 
 export interface AccountFinding {

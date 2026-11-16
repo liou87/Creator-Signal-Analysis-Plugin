@@ -3,13 +3,16 @@ import { BUSINESS_CONTACT } from './rules';
 
 /**
  * 账号层信号。每项三态：有 / 无 / 未能检查（D-13）。
- * 入口类（充电、小店、课程）由提取层直接观察；文本类由简介推出。
+ * 入口类（充电、课程）由提取层直接观察；文本类（商务联系方式、店铺、站外付费社群）由简介推出。
+ * 每一项都必须对应一种付钱方（D-39），所以只拉关注的公众号、小红书不算（D-40）。
  */
 
-const OFFSITE =
-  /(淘宝|天猫|京东|拼多多|微店|闲鱼|小红书)[^，。\n]{0,6}(店|搜)|店铺[:：]|公众号|知识星球|爱发电|afdian|面包多|小程序|付费(群|社群)|patreon/i;
+/** 店铺：站内小店或站外网店都算。网页上看不到小店入口，只能看简介里写没写（D-40） */
+const SHOP =
+  /(淘宝|天猫|京东|拼多多|微店|有赞|抖音|小红书)[^，。\n|｜]{0,6}(店|小店|旗舰店)|(淘宝|天猫|京东|拼多多)[^，。\n|｜]{0,4}搜|(店铺|网店|小店|淘宝店|旗舰店)(名|名称)?\s*[:：]|(同名|自家|我的|个人)[^，。\n|｜]{0,4}(店铺|小店|网店|周边店)|周边(店|小店|店铺)/i;
 
-const ORG = /MCN|签约(机构|公司|于)?|经纪(公司|合作)|厂牌|旗下(艺人|创作者|账号)|官方账号|有限公司/i;
+/** 站外付费社群：粉丝在站外付费 */
+const PAID_COMMUNITY = /知识星球|爱发电|afdian|面包多|小报童|patreon|付费(群|社群|会员|专栏|圈子)/i;
 
 function firstMatch(text: string, pattern: RegExp): string | undefined {
   const m = pattern.exec(text);
@@ -43,13 +46,6 @@ export function classifyAccount(
     }
   }
 
-  let org = fromBio(snapshot.bio, ORG);
-  if (org.state !== 'yes' && snapshot.officialTitle !== null) {
-    const hit = firstMatch(snapshot.officialTitle, /机构|企业|官方|公司|组织|媒体/);
-    if (hit) org = { state: 'yes', basis: `认证：「${snapshot.officialTitle}」` };
-    else if (org.state === 'unknown') org = { state: 'no' };
-  }
-
   const entry = (state: Tri, name: string) =>
     state === 'yes' ? { state, basis: `接口或页面显示已开通${name}` } : { state };
 
@@ -62,12 +58,15 @@ export function classifyAccount(
     }
   }
 
+  // 店铺：页面上看到了小店入口就算有（目前没在网页上见过）；否则看简介
+  const shop =
+    snapshot.hasShop === 'yes' ? entry('yes', '小店') : fromBio(snapshot.bio, SHOP);
+
   return [
     { id: 'businessContact', ...business },
-    { id: 'shop', ...entry(snapshot.hasShop, '小店/橱窗') },
+    { id: 'shop', ...shop },
     { id: 'course', ...entry(snapshot.hasCourse, '课程') },
-    { id: 'offsite', ...fromBio(snapshot.bio, OFFSITE) },
-    { id: 'org', ...org },
+    { id: 'paidCommunity', ...fromBio(snapshot.bio, PAID_COMMUNITY) },
     { id: 'charge', ...charge },
   ];
 }

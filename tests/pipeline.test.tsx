@@ -70,13 +70,13 @@ describe('端到端', () => {
     expect(r.content.low).toBeCloseTo(14.4);
     expect(r.content.high).toBeCloseTo(19.2);
 
-    // 账号层：商务联系方式 10 + 充电 5 = 15
-    expect(r.account.score).toBe(15);
-    expect(r.total.point).toBeCloseTo(31.8);
-    // 总分区间：下界 14.4 + 15；上界 19.2 + 15，再加未能检查的课程 5 分
-    expect(r.total.low).toBeCloseTo(29.4);
-    expect(r.total.high).toBeCloseTo(39.2);
-    expect(r.band).toBe('low');
+    // 账号层：商务联系方式 11 + 充电 6 = 17（D-40）
+    expect(r.account.score).toBe(17);
+    expect(r.total.point).toBeCloseTo(33.8);
+    // 总分区间：下界 14.4 + 17；上界 19.2 + 17，再加未能检查的课程 6 分
+    expect(r.total.low).toBeCloseTo(31.4);
+    expect(r.total.high).toBeCloseTo(42.2);
+    expect(r.band).toBe('mid');
 
     // 课程入口未能检查 → 置信度为中，不扣分
     expect(r.confidence.level).toBe('mid');
@@ -98,9 +98,9 @@ describe('端到端', () => {
     expect(html).toContain('未能检查');
     // 取到 21 条，窗口内 20 条，两个数字都要让人看到
     expect(html).toContain('本次取到 21 条');
-    // 区间 29–39 跨了「低」和「中」，要明说；并说明上界算进了未能检查的项
+    // 区间 31–42 跨了「低」和「中」，要明说；并说明上界算进了未能检查的项
     expect(html).toContain('区间跨了「低」和「中');
-    expect(html).toContain('付费课程，共 5 分');
+    expect(html).toContain('付费课程，共 6 分');
   });
 
   it('取不到视频时不给指数，并把自检展开（D-27）', async () => {
