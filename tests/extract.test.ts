@@ -207,7 +207,7 @@ describe('候选标记字段（仅供自检核对，D-36）', () => {
         honor_reply: { honor: [{ desc: '热门' }] },
         rights: { pay: 0, ugc_pay: 1, is_cooperation: 1, hd5: 1 },
       }),
-    ).toEqual(['is_upower_exclusive', 'honor_reply', 'rights.ugc_pay', 'rights.is_cooperation']);
+    ).toEqual(['is_upower_exclusive', 'rights.ugc_pay', 'rights.is_cooperation']);
   });
 
   it('没有相关字段时为空', () => {

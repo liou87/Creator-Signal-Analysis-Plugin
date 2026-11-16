@@ -288,7 +288,7 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
 
         <h3>局限</h3>
         <ul className="notes">
-          <li>没有披露、也没有链接的合作看不到，所以分数是下界。</li>
+          <li>视频里的口播广告、没有挂链接的品牌合作看不到（平台接口里也没有可用的商业合作标记），所以分数是下界。</li>
           <li>只读标题、简介、置顶评论和平台标记，不看画面和口播，也不读图片上的字。</li>
           <li>没有按分区做归一化，测评类创作者天然偏高。</li>
           <li>权重是先验设定，不是数据拟合的结果。</li>

@@ -204,10 +204,13 @@ export function isUploadsPath(pathname: string): boolean {
 
 /** 投稿页的地址：优先用导航栏里「投稿」链接的真实地址，找不到再按规律拼 */
 function uploadsUrl(mid: string): string {
-  const nav = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).find((a) =>
-    /^投稿\d*$/.test((a.textContent ?? '').replace(/\s+/g, '')),
+  // 页面顶栏也有一个「投稿」（上传入口，指向别的域名），所以只认本站的链接
+  const nav = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).find(
+    (a) =>
+      a.href.startsWith(location.origin) &&
+      /^投稿\d*$/.test((a.textContent ?? '').replace(/\s+/g, '')),
   );
-  if (nav?.href.startsWith(location.origin)) return nav.href;
+  if (nav) return nav.href;
   const at = location.pathname.indexOf(`/${mid}`);
   const prefix = at >= 0 ? location.pathname.slice(0, at) : '';
   return `${location.origin}${prefix}/${mid}/upload/video`;
@@ -539,15 +542,18 @@ export function entriesFromTexts(texts: Set<string>): { shop: Tri; course: Tri; 
 
 /** 导航栏里各标签的文字，仅用于自检：让人看到页面上到底有哪些标签 */
 export function navTexts(root: ParentNode): string[] {
-  const anchor = Array.from(root.querySelectorAll('a, div, span, li')).find(
+  const anchors = Array.from(root.querySelectorAll('a, div, span, li')).filter(
     (el) => el.children.length <= 2 && /^投稿\d*$/.test((el.textContent ?? '').replace(/\s+/g, '')),
   );
-  // 从「投稿」往上找，直到找到一个包含好几个短文本子项的容器
-  for (let node = anchor?.parentElement, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
-    const texts = Array.from(node.children)
-      .map((child) => (child.textContent ?? '').replace(/\s+/g, ''))
-      .filter((t) => t.length > 0 && t.length <= 10);
-    if (texts.length >= 3) return texts;
+  // 页面顶栏也有一个「投稿」（上传入口）。空间页自己的导航栏里同时有「主页」，
+  // 以此区分：从每个「投稿」往上找，直到找到一个子项里含「主页」的容器
+  for (const anchor of anchors) {
+    for (let node = anchor.parentElement, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
+      const texts = Array.from(node.children)
+        .map((child) => (child.textContent ?? '').replace(/\s+/g, ''))
+        .filter((t) => t.length > 0 && t.length <= 10);
+      if (texts.length >= 3 && texts.some((t) => /^主页/.test(t))) return texts;
+    }
   }
   return [];
 }
@@ -559,7 +565,7 @@ export function navTexts(root: ParentNode): string[] {
  */
 export function candidateFlags(d: Record<string, unknown>): string[] {
   const interesting =
-    /(^|_)(ad|cm|pay|order)(_|$)|commerc|business|sponsor|promo|charg|upower|elec|cooperat|declar|goods|mall|shop|activity|honor/i;
+    /(^|_)(ad|cm|pay|order)(_|$)|commerc|business|sponsor|promo|charg|upower|elec|cooperat|declar|goods|mall|shop|activity/i;
   const truthy = (v: unknown) =>
     v === true ||
     (typeof v === 'number' && v !== 0) ||
@@ -578,7 +584,11 @@ export function candidateFlags(d: Record<string, unknown>): string[] {
   return found;
 }
 
-/** 课程数。接口字段的含义还没有确认，所以只在大于 0 时采信（D-36） */
+/**
+ * 课程数，取自 navnum 的 pugv 字段。
+ * 字段含义已在真实页面上确认：一位确有付费课的创作者返回 1，另一位返回 0。
+ * 所以 0 可以当作「无」（D-38）
+ */
 async function loadCourseCount(mid: string, c: Collector): Promise<Tri> {
   try {
     const d = await getJson<Record<string, unknown>>(`${API}/x/space/navnum?mid=${mid}`);
@@ -588,7 +598,8 @@ async function loadCourseCount(mid: string, c: Collector): Promise<Tri> {
       .join('，');
     const count = d.pugv;
     c.ok('课程数', '接口 navnum', `返回：${summary || '（没有数值字段）'}`);
-    return typeof count === 'number' && count > 0 ? 'yes' : 'unknown';
+    if (typeof count !== 'number') return 'unknown';
+    return count > 0 ? 'yes' : 'no';
   } catch (e) {
     c.fail('课程数', '接口 navnum', e);
     return 'unknown';
@@ -672,7 +683,8 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
 
   const entries = entriesFromTexts(shortTexts(document));
   const courseByApi = await loadCourseCount(mid, c);
-  const course: Tri = courseByApi === 'yes' ? 'yes' : entries.course;
+  // 接口给了明确答案就用接口的；接口没走通时，页面上看到入口算「有」
+  const course: Tri = courseByApi !== 'unknown' ? courseByApi : entries.course;
   const nav = navTexts(document);
   c.sources.push({
     item: '小店、课程入口',
