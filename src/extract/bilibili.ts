@@ -358,6 +358,8 @@ interface DetailStats {
   pinnedPaths: Record<string, number>;
   /** 每种链接各留一个原始样例，供自检展示。用来核对对返回字段的理解是否正确 */
   linkSamples: Map<string, string>;
+  /** 详情接口里的候选标记字段 → 出现在多少条视频里 */
+  flags: Map<string, number>;
   errors: string[];
 }
 
@@ -428,6 +430,9 @@ async function enrich(
     if (d.pubdate !== undefined) out.pubdate = d.pubdate;
     // 以接口返回的标题为准：从页面链接读到的标题可能混进封面上的文字
     if (d.title) out.title = d.title;
+    for (const flag of candidateFlags(d as unknown as Record<string, unknown>)) {
+      stats.flags.set(flag, (stats.flags.get(flag) ?? 0) + 1);
+    }
     if (d.is_upower_exclusive === true) {
       out.badges = ['充电专属'];
       stats.chargeExclusive++;
@@ -515,18 +520,79 @@ export function shortTexts(root: ParentNode): Set<string> {
   return texts;
 }
 
+/**
+ * 页面文字只能给出「有」，给不出「无」（D-31、D-36）。
+ *
+ * 最初假定小店和课程是导航栏里的标签，认出导航栏而没看到它们就判「无」。
+ * 真实页面验证推翻了这个假定：一位确有付费课的创作者被判成了「课程：无」。
+ * 在弄清这些入口到底显示在哪之前，没看到一律是「未能检查」。
+ */
 export function entriesFromTexts(texts: Set<string>): { shop: Tri; course: Tri; charge: Tri } {
   const list = [...texts];
-  // 能认出导航栏，才有资格说某个入口「没有」；认不出就是「未能检查」
-  const navFound = list.some((t) => /^(主页|动态|投稿|合集|收藏)\d*$/.test(t));
-  const has = (p: RegExp): Tri => (list.some((t) => p.test(t)) ? 'yes' : navFound ? 'no' : 'unknown');
+  const seen = (p: RegExp): Tri => (list.some((t) => p.test(t)) ? 'yes' : 'unknown');
   return {
-    shop: has(/^(小店|橱窗|店铺|商品)\d*$/),
-    course: has(/^(课堂|课程)\d*$/),
-    // 充电是页头的按钮，不在导航栏里。认出导航栏不能说明「没有充电」，
-    // 所以页面只能给出「有」，给不出「无」（D-31）
-    charge: list.some((t) => /^(充电|为TA充电|包月充电|充电中)$/.test(t)) ? 'yes' : 'unknown',
+    shop: seen(/^(TA的)?(小店|橱窗|店铺)\d*$/),
+    course: seen(/^(TA的)?(课堂|课程)\d*$/),
+    charge: seen(/^(充电|为TA充电|包月充电|充电中)$/),
   };
+}
+
+/** 导航栏里各标签的文字，仅用于自检：让人看到页面上到底有哪些标签 */
+export function navTexts(root: ParentNode): string[] {
+  const anchor = Array.from(root.querySelectorAll('a, div, span, li')).find(
+    (el) => el.children.length <= 2 && /^投稿\d*$/.test((el.textContent ?? '').replace(/\s+/g, '')),
+  );
+  // 从「投稿」往上找，直到找到一个包含好几个短文本子项的容器
+  for (let node = anchor?.parentElement, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
+    const texts = Array.from(node.children)
+      .map((child) => (child.textContent ?? '').replace(/\s+/g, ''))
+      .filter((t) => t.length > 0 && t.length <= 10);
+    if (texts.length >= 3) return texts;
+  }
+  return [];
+}
+
+/**
+ * 从详情接口的返回里找出「看名字可能与商业化有关、且值不为空」的字段。
+ * 仅用于自检：我不知道平台有没有给商业合作视频打标记、字段叫什么，
+ * 先把候选字段列出来，看到真实数据再决定用哪个（D-36）。导出以便测试
+ */
+export function candidateFlags(d: Record<string, unknown>): string[] {
+  const interesting =
+    /(^|_)(ad|cm|pay|order)(_|$)|commerc|business|sponsor|promo|charg|upower|elec|cooperat|declar|goods|mall|shop|activity|honor/i;
+  const truthy = (v: unknown) =>
+    v === true ||
+    (typeof v === 'number' && v !== 0) ||
+    (typeof v === 'string' && v.length > 0) ||
+    (Array.isArray(v) && v.length > 0) ||
+    (typeof v === 'object' && v !== null && !Array.isArray(v) && Object.keys(v).length > 0);
+  const found: string[] = [];
+  const scan = (obj: Record<string, unknown>, prefix: string) => {
+    for (const [key, value] of Object.entries(obj)) {
+      if (interesting.test(key) && truthy(value)) found.push(prefix + key);
+    }
+  };
+  scan(d, '');
+  const rights = d.rights;
+  if (rights && typeof rights === 'object') scan(rights as Record<string, unknown>, 'rights.');
+  return found;
+}
+
+/** 课程数。接口字段的含义还没有确认，所以只在大于 0 时采信（D-36） */
+async function loadCourseCount(mid: string, c: Collector): Promise<Tri> {
+  try {
+    const d = await getJson<Record<string, unknown>>(`${API}/x/space/navnum?mid=${mid}`);
+    const summary = Object.entries(d)
+      .filter(([, v]) => typeof v === 'number')
+      .map(([k, v]) => `${k}=${v}`)
+      .join('，');
+    const count = d.pugv;
+    c.ok('课程数', '接口 navnum', `返回：${summary || '（没有数值字段）'}`);
+    return typeof count === 'number' && count > 0 ? 'yes' : 'unknown';
+  } catch (e) {
+    c.fail('课程数', '接口 navnum', e);
+    return 'unknown';
+  }
 }
 
 const TRI_TEXT: Record<Tri, string> = { yes: '有', no: '无', unknown: '未能检查' };
@@ -553,6 +619,7 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     pinnedWithLinks: 0,
     pinnedPaths: {},
     linkSamples: new Map(),
+    flags: new Map(),
     errors: [],
   };
   let done = 0;
@@ -595,15 +662,23 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     });
   }
 
+  if (stats.flags.size > 0) {
+    c.ok(
+      '详情接口里的候选标记字段',
+      '接口 view（仅供核对）',
+      [...stats.flags.entries()].map(([k, n]) => `${k} ×${n}`).join('，'),
+    );
+  }
+
   const entries = entriesFromTexts(shortTexts(document));
+  const courseByApi = await loadCourseCount(mid, c);
+  const course: Tri = courseByApi === 'yes' ? 'yes' : entries.course;
+  const nav = navTexts(document);
   c.sources.push({
     item: '小店、课程入口',
-    path: '页面导航栏文字',
-    ok: entries.shop !== 'unknown',
-    detail:
-      entries.shop === 'unknown'
-        ? '没有认出导航栏，这两项记为未能检查'
-        : `小店 ${TRI_TEXT[entries.shop]}，课程 ${TRI_TEXT[entries.course]}`,
+    path: '页面文字（只能确认有，不能确认无）',
+    ok: true,
+    detail: `小店：${entries.shop === 'yes' ? '看到入口' : '没看到'}；课程：${entries.course === 'yes' ? '看到入口' : '没看到'}。导航栏标签：${nav.length ? nav.join(' / ') : '没有认出导航栏'}`,
   });
   // 充电：接口给了明确答案就用接口的；否则页面上看到按钮算「有」，看不到算「未能检查」
   const charge = profile.charge !== 'unknown' ? profile.charge : entries.charge;
@@ -621,7 +696,7 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     officialTitle: profile.officialTitle,
     hasCharge: charge,
     hasShop: entries.shop,
-    hasCourse: entries.course,
+    hasCourse: course,
     videos,
     videoSource,
     capturedAt: Date.now(),

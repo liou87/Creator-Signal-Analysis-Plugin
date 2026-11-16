@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  candidateFlags,
   entriesFromTexts,
   isUploadsPath,
   pickTitle,
@@ -144,10 +145,10 @@ describe('页面入口三态（D-13）', () => {
     expect(r).toEqual({ shop: 'yes', course: 'yes', charge: 'yes' });
   });
 
-  it('认出导航栏但没有入口 → 无', () => {
+  it('没看到入口 → 未能检查，而不是无', () => {
     const r = entriesFromTexts(new Set(['主页', '动态', '投稿', '收藏']));
-    // 充电是页头的按钮，不在导航栏里：页面只能给出「有」，给不出「无」（D-31）
-    expect(r).toEqual({ shop: 'no', course: 'no', charge: 'unknown' });
+    // 页面只能确认有，不能确认无（D-31、D-36）：一位确有付费课的创作者曾被判成「课程：无」
+    expect(r).toEqual({ shop: 'unknown', course: 'unknown', charge: 'unknown' });
   });
 
   it('没认出导航栏 → 未能检查，而不是无', () => {
@@ -192,5 +193,24 @@ describe('从页面链接读视频（真实页面验证后修正）', () => {
     expect(isUploadsPath('/39627524/video')).toBe(true);
     expect(isUploadsPath('/zh-Hans/39627524')).toBe(false);
     expect(isUploadsPath('/39627524/dynamic')).toBe(false);
+  });
+});
+
+describe('候选标记字段（仅供自检核对，D-36）', () => {
+  it('只列出名字相关且值不为空的字段', () => {
+    expect(
+      candidateFlags({
+        title: '某视频',
+        is_upower_exclusive: true,
+        is_upower_play: false,
+        mission_id: 0,
+        honor_reply: { honor: [{ desc: '热门' }] },
+        rights: { pay: 0, ugc_pay: 1, is_cooperation: 1, hd5: 1 },
+      }),
+    ).toEqual(['is_upower_exclusive', 'honor_reply', 'rights.ugc_pay', 'rights.is_cooperation']);
+  });
+
+  it('没有相关字段时为空', () => {
+    expect(candidateFlags({ title: 'x', duration: 10 })).toEqual([]);
   });
 });
