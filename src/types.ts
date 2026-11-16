@@ -3,7 +3,7 @@
  * 见 docs/ARCHITECTURE.md。
  */
 
-/** 证据档位。A 明确披露、B 带货转化、C 疑似软广。定义见 docs/DESIGN.md 3.2 */
+/** 证据档位。A 明确披露、B 直接变现（带货或付费内容）、C 疑似软广。定义见 docs/DESIGN.md 3.2 */
 export type Tier = 'A' | 'B' | 'C';
 
 /** 变现类型。不影响分数，帮助判断此人做的是哪种生意 */

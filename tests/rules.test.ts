@@ -42,7 +42,7 @@ describe('否定与误判（D-09）', () => {
   });
 });
 
-describe('B 带货转化', () => {
+describe('B 直接变现', () => {
   it.each([
     ['同款在这里 https://item.taobao.com/item.htm?id=1', 'B1-购物链接'],
     ['京东：https://u.jd.com/abcd', 'B1-购物链接'],

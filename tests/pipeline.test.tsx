@@ -125,3 +125,26 @@ describe('端到端', () => {
     expect(html).toContain('code -352');
   });
 });
+
+describe('确证的构成（D-35）', () => {
+  it('带货和付费内容分开列出', async () => {
+    const mixed: CreatorSnapshot = {
+      ...snapshot,
+      videos: [
+        video(0, { desc: '同款 https://b23.tv/mall-abc' }),
+        video(1, { badges: ['充电专属'] }),
+        video(2, { badges: ['充电专属'] }),
+        ...Array.from({ length: 10 }, (_, i) => video(3 + i)),
+      ],
+    };
+    const videos = selectWindow(mixed.videos, mixed.capturedAt);
+    const classified = await classifyVideos(videos);
+    const report = score(mixed, videos, classified.evidence, classifyAccount(mixed, videos), {
+      llmUsed: false,
+    });
+    const html = renderToStaticMarkup(<ReportView report={report} />);
+    expect(html).toContain('（带货 1、付费内容 2）');
+    expect(html).toContain('直接变现');
+    expect(html).not.toContain('带货转化');
+  });
+});

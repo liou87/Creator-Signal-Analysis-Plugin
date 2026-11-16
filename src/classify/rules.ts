@@ -65,7 +65,7 @@ export const RULES: Rule[] = [
     checkNegation: true,
   },
 
-  // ── B 带货转化：推荐 + 购买方式（《互联网广告管理办法》第九条）──
+  // ── B 直接变现：带货（推荐 + 购买方式（《互联网广告管理办法》第九条）或付费内容 ──
   { id: 'B1-商业推广链接', tier: 'B', type: 'brand', pattern: linkPattern(AD_LINKS) },
   { id: 'B1-购物链接', tier: 'B', type: 'goods', pattern: linkPattern(SHOP_LINKS) },
   {

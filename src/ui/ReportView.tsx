@@ -10,7 +10,7 @@ const BAND_MEANING: Record<Band, string> = {
   high: '变现是这个账号公开活动的重要部分：商业内容频繁，且搭建了多种渠道。',
 };
 const CONF_LABEL: Record<Confidence, string> = { low: '低', mid: '中', high: '高' };
-const TIER_LABEL: Record<Tier, string> = { A: '明确披露', B: '带货转化', C: '疑似软广' };
+const TIER_LABEL: Record<Tier, string> = { A: '明确披露', B: '直接变现', C: '疑似软广' };
 const TYPE_LABEL: Record<MonetizationType, string> = {
   brand: '品牌合作',
   goods: '商品带货',
@@ -80,6 +80,20 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
       ? `，并假定未能检查的 ${unknownLabels.length} 项（${unknownLabels.join('、')}，共 ${account.unknownPoints} 分）全部为「有」`
       : '';
   const sourceTrouble = !content.assessed || report.sources.some((s) => !s.ok);
+
+  // 确证的构成：明确披露 / 带货 / 付费内容。付费内容和带货都算「直接变现」，
+  // 但性质不同，要让人一眼看出分数主要来自哪一种（D-35）
+  const certain = report.verdicts.filter((v) => v.tier === 'A' || v.tier === 'B');
+  const isPaid = (t: MonetizationType | undefined) => t === 'fan' || t === 'knowledge';
+  const disclosed = certain.filter((v) => v.tier === 'A').length;
+  const paid = certain.filter((v) => v.tier === 'B' && isPaid(v.evidence[0]?.type)).length;
+  const selling = certain.length - disclosed - paid;
+  const certainParts = [
+    disclosed > 0 ? `明确披露 ${disclosed}` : '',
+    selling > 0 ? `带货 ${selling}` : '',
+    paid > 0 ? `付费内容 ${paid}` : '',
+  ].filter(Boolean);
+  const certainBreakdown = certainParts.length > 1 ? `（${certainParts.join('、')}）` : '';
 
   return (
     <>
@@ -168,7 +182,8 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
               取最近 {cfg.window.maxVideos} 条且 {cfg.window.maxAgeMonths} 个月内的视频。本次取到{' '}
               {content.fetched} 条，落在窗口内的样本 <strong>{content.sampleSize}</strong> 条
               {content.span ? `（${day(content.span.from)} 至 ${day(content.span.to)}）` : ''}。其中确证{' '}
-              <strong>{content.certainCount}</strong> 条，疑似 <strong>{content.suspectedCount}</strong> 条。
+              <strong>{content.certainCount}</strong> 条{certainBreakdown}，疑似{' '}
+              <strong>{content.suspectedCount}</strong> 条。
             </p>
             <pre className="formula">
               {`占比 = (${content.certainCount} + ${content.suspectedCount} × ${wC}) ÷ (${content.sampleSize} + ${cfg.content.shrinkage}) = ${r2(content.ratio)}
