@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { entriesFromTexts, pinnedFromReply, profileFromCard } from '../src/extract/bilibili';
+import {
+  entriesFromTexts,
+  isUploadsPath,
+  pickTitle,
+  pinnedFromReply,
+  profileFromCard,
+} from '../src/extract/bilibili';
 import { midFromUrl, nameFromTitle } from '../src/extract/identify';
 import { keysFromNav, mixinKey, signQuery } from '../src/extract/wbi';
 
@@ -152,5 +158,39 @@ describe('页面入口三态（D-13）', () => {
   it('正文里出现「充电」二字的长句不会被当成入口', () => {
     const r = entriesFromTexts(new Set(['主页', '手机充电测试']));
     expect(r.charge).toBe('unknown');
+  });
+});
+
+describe('从页面链接读视频（真实页面验证后修正）', () => {
+  it('封面文字（播放量、弹幕数、时长）不当作标题', () => {
+    expect(
+      pickTitle([
+        { text: '207.1万265207:30', fromAttr: false },
+        { text: '我将负责嘎嘎乱吃！', fromAttr: false },
+      ]),
+    ).toBe('我将负责嘎嘎乱吃！');
+  });
+
+  it('有 title 属性的优先', () => {
+    expect(
+      pickTitle([
+        { text: '一段很长很长的、并不是标题的链接文字', fromAttr: false },
+        { text: '真标题', fromAttr: true },
+      ]),
+    ).toBe('真标题');
+  });
+
+  it('只有封面文字时也返回它，等详情接口的标题来覆盖', () => {
+    expect(pickTitle([{ text: '143.4万1.6万02:13:12', fromAttr: false }])).toBe(
+      '143.4万1.6万02:13:12',
+    );
+    expect(pickTitle([])).toBe('');
+  });
+
+  it('识别当前是否在投稿页', () => {
+    expect(isUploadsPath('/zh-Hans/39627524/upload/video')).toBe(true);
+    expect(isUploadsPath('/39627524/video')).toBe(true);
+    expect(isUploadsPath('/zh-Hans/39627524')).toBe(false);
+    expect(isUploadsPath('/39627524/dynamic')).toBe(false);
   });
 });

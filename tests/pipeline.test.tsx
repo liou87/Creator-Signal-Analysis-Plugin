@@ -33,7 +33,7 @@ const snapshot: CreatorSnapshot = {
   hasCharge: 'yes',
   hasShop: 'no',
   hasCourse: 'unknown',
-  videoSource: 'api',
+  videoSource: 'latest',
   capturedAt: NOW,
   sources: [{ item: '视频列表', path: '接口 arc/search', ok: true, detail: '20 条' }],
   videos: [

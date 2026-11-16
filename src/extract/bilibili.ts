@@ -21,7 +21,8 @@ import { keysFromNav, signQuery, type WbiKeys } from './wbi';
 
 const API = 'https://api.bilibili.com';
 const MAX_VIDEOS = 30;
-const CONCURRENCY = 3;
+const CONCURRENCY = 2;
+const REQUEST_GAP_MS = 150;
 
 type Progress = (text: string) => void;
 
@@ -149,49 +150,101 @@ export function profileFromCard(d: CardData): Profile {
 
 // ── 视频列表 ────────────────────────────────────────────────
 
-interface ArcSearch {
-  list?: {
-    vlist?: Array<{ bvid: string; title: string; description?: string; created?: number }>;
-  };
-}
-
 function videoUrl(bvid: string): string {
   return `https://www.bilibili.com/video/${bvid}`;
 }
 
-/** 备用路径：页面上所有指向视频的链接。不依赖具体的类名，页面改版后仍然可用 */
+/**
+ * 从一组候选文字里挑出最像标题的。同一个视频通常有两个链接：
+ * 封面（文字是播放量、弹幕数、时长，如「207.1万265207:30」）和标题。
+ * 真实页面验证时曾把封面文字当成标题，所以：有 title 属性的优先；
+ * 其次排除以时长结尾的；最后才比长短。导出以便测试
+ */
+export function pickTitle(candidates: Array<{ text: string; fromAttr: boolean }>): string {
+  const coverLike = (t: string) => /\d{1,2}:\d{2}$/.test(t);
+  const rank = (c: { text: string; fromAttr: boolean }) =>
+    (c.fromAttr ? 2 : 0) + (coverLike(c.text) ? 0 : 1);
+  return (
+    candidates
+      .filter((c) => c.text.length > 0)
+      .sort((a, b) => rank(b) - rank(a) || b.text.length - a.text.length)[0]?.text ?? ''
+  );
+}
+
+/**
+ * 页面上所有指向视频的链接。不依赖具体的类名，页面改版后仍然可用。
+ * 标题只是临时的，详情接口返回的标题会覆盖它
+ */
 export function videosFromDom(root: ParentNode): VideoItem[] {
-  const seen = new Map<string, VideoItem>();
+  const seen = new Map<string, Array<{ text: string; fromAttr: boolean }>>();
   for (const a of Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href*="/video/BV"]'))) {
-    const m = /\/video\/(BV[0-9A-Za-z]{10})/.exec(a.getAttribute('href') ?? '');
-    const bvid = m?.[1];
+    const bvid = /\/video\/(BV[0-9A-Za-z]{10})/.exec(a.getAttribute('href') ?? '')?.[1];
     if (!bvid) continue;
-    const title = (a.getAttribute('title') || a.textContent || '').trim();
-    const prev = seen.get(bvid);
-    // 同一视频通常有封面和标题两个链接，取文字更长的那个作标题
-    if (!prev || title.length > prev.title.length) {
-      seen.set(bvid, { bvid, title, url: videoUrl(bvid) });
-    }
+    const attr = (a.getAttribute('title') ?? '').trim();
+    const text = (a.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const list = seen.get(bvid) ?? [];
+    list.push(attr ? { text: attr, fromAttr: true } : { text, fromAttr: false });
+    seen.set(bvid, list);
   }
-  return [...seen.values()].filter((v) => v.title.length > 0).slice(0, MAX_VIDEOS);
+  return [...seen.entries()]
+    .slice(0, MAX_VIDEOS)
+    .map(([bvid, candidates]) => ({ bvid, title: pickTitle(candidates), url: videoUrl(bvid) }));
 }
 
 interface RecArchives {
   archives?: Array<{ bvid: string; title: string; pubdate?: number }>;
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** 当前是否就在「投稿」标签页上。此时页面上的视频就是最近投稿 */
+export function isUploadsPath(pathname: string): boolean {
+  return /\/(upload|video)(\/|$)/.test(pathname);
+}
+
+/** 投稿页的地址：优先用导航栏里「投稿」链接的真实地址，找不到再按规律拼 */
+function uploadsUrl(mid: string): string {
+  const nav = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).find((a) =>
+    /^投稿\d*$/.test((a.textContent ?? '').replace(/\s+/g, '')),
+  );
+  if (nav?.href.startsWith(location.origin)) return nav.href;
+  const at = location.pathname.indexOf(`/${mid}`);
+  const prefix = at >= 0 ? location.pathname.slice(0, at) : '';
+  return `${location.origin}${prefix}/${mid}/upload/video`;
+}
+
 /**
- * 空间页在页面里内嵌了一个访问令牌，页面自己请求投稿列表时会带上它。
- * 这里只是读出来原样带上，取不到就不带。
+ * 在后台加载这位创作者的投稿页，读它渲染出来的视频链接。
+ *
+ * 请求由 B 站自己的页面代码发出，这里只读结果，和用户自己点一下「投稿」
+ * 标签看到的内容相同。不伪造任何参数（D-28）。
  */
-function webIdFromPage(): string | null {
+async function videosFromUploadsPage(mid: string): Promise<VideoItem[]> {
+  const frame = document.createElement('iframe');
+  frame.src = uploadsUrl(mid);
+  frame.setAttribute('aria-hidden', 'true');
+  frame.tabIndex = -1;
+  // 放在屏幕外但保留尺寸：页面按可见区域渲染列表
+  frame.style.cssText =
+    'position:fixed;left:-20000px;top:0;width:1280px;height:2400px;border:0;pointer-events:none;';
+  document.body.appendChild(frame);
   try {
-    const raw = document.getElementById('__RENDER_DATA__')?.textContent;
-    if (!raw) return null;
-    const data = JSON.parse(decodeURIComponent(raw)) as { access_id?: unknown };
-    return typeof data.access_id === 'string' ? data.access_id : null;
-  } catch {
-    return null;
+    let last = 0;
+    let stable = 0;
+    let list: VideoItem[] = [];
+    // 最多等 15 秒；数量连续两次不变即认为渲染完成
+    for (let i = 0; i < 30; i++) {
+      await sleep(500);
+      const doc = frame.contentDocument;
+      if (!doc) continue;
+      list = videosFromDom(doc);
+      stable = list.length > 0 && list.length === last ? stable + 1 : 0;
+      last = list.length;
+      if (stable >= 2 && i >= 4) break;
+    }
+    return list;
+  } finally {
+    frame.remove();
   }
 }
 
@@ -208,16 +261,17 @@ function describeList(list: VideoItem[]): string {
 }
 
 /**
- * 视频列表依次尝试三条路径。前两条是接口，返回的是最近投稿；
- * 第三条只是当前页面上看得到的视频，不一定是最近的（D-27）。
+ * 视频列表依次尝试三条路径（D-33）：
+ *   1. 接口 recArchivesByKeywords：最快，但不稳定（成功过，也返回过 412）
+ *   2. 投稿页：当前就在投稿页则直接读，否则在后台加载。得到的是最近投稿
+ *   3. 当前页面上看得到的视频：不一定是最近的（D-27）
  *
- * 顺序来自真实页面验证：recArchivesByKeywords 未登录也能用，按发布时间
- * 从新到旧返回；arc/search 被风控拒绝（-352），所以排在后面。
+ * 曾经的 arc/search 路径在每次验证里都被风控拒绝（-352），已移除。
  */
 async function loadVideoList(
   mid: string,
-  keys: WbiKeys | null,
   c: Collector,
+  onProgress: Progress,
 ): Promise<{ list: VideoItem[]; source: VideoSource }> {
   try {
     // 多取一些再按时间排序，不依赖它的默认顺序
@@ -231,49 +285,41 @@ async function loadVideoList(
       pubdate: v.pubdate,
     }));
     c.ok('视频列表', '接口 recArchivesByKeywords', describeList(list));
-    return { list: newest(list), source: 'api' };
+    return { list: newest(list), source: 'latest' };
   } catch (e) {
     c.fail('视频列表', '接口 recArchivesByKeywords', e);
   }
 
-  if (keys) {
-    const webId = webIdFromPage();
-    const path = `接口 arc/search（备用${webId ? '，带页面令牌' : '，页面里没有令牌'}）`;
+  const where = `当前页面路径 ${location.pathname}`;
+  if (isUploadsPath(location.pathname)) {
+    const list = videosFromDom(document);
+    if (list.length > 0) {
+      c.ok('视频列表', '投稿页（当前页面）', `${list.length} 条；${where}`);
+      return { list, source: 'latest' };
+    }
+    c.fail('视频列表', '投稿页（当前页面）', `页面上没有找到视频链接；${where}`);
+  } else {
+    onProgress('在后台加载投稿页');
     try {
-      const params: Record<string, string | number> = {
-        mid,
-        ps: MAX_VIDEOS,
-        pn: 1,
-        order: 'pubdate',
-        platform: 'web',
-      };
-      if (webId) params.w_webid = webId;
-      const d = await getJson<ArcSearch>(signed('/x/space/wbi/arc/search', params, keys));
-      const list = (d.list?.vlist ?? []).map((v) => ({
-        bvid: v.bvid,
-        title: v.title,
-        url: videoUrl(v.bvid),
-        pubdate: v.created,
-        desc: v.description,
-      }));
-      c.ok('视频列表', path, describeList(list));
-      return { list: newest(list), source: 'api' };
+      const list = await videosFromUploadsPage(mid);
+      if (list.length === 0) throw new Error('加载后没有找到视频链接');
+      c.ok('视频列表', '投稿页（后台加载）', `${list.length} 条`);
+      return { list, source: 'latest' };
     } catch (e) {
-      c.fail('视频列表', path, e);
+      c.fail('视频列表', '投稿页（后台加载）', e);
     }
   }
 
   const list = videosFromDom(document);
-  const where = `当前页面路径 ${location.pathname}`;
   if (list.length > 0) {
     c.ok(
       '视频列表',
-      '页面链接（备用）',
+      '当前页面上的链接（备用）',
       `${list.length} 条，只是当前页面上看得到的视频；${where}`,
     );
     return { list, source: 'page' };
   }
-  c.fail('视频列表', '页面链接（备用）', `页面上没有找到视频链接；${where}`);
+  c.fail('视频列表', '当前页面上的链接（备用）', `页面上没有找到视频链接；${where}`);
   return { list: [], source: 'none' };
 }
 
@@ -284,6 +330,8 @@ interface ViewData {
   desc?: string;
   pubdate?: number;
   title?: string;
+  /** 是否为充电专属视频。字段名来自公开资料，未确认；自检里会报告命中条数 */
+  is_upower_exclusive?: boolean;
 }
 
 interface ReplyContent {
@@ -300,7 +348,8 @@ interface ReplyData {
 
 interface DetailStats {
   view: number;
-  tags: number;
+  /** 平台标记为充电专属的条数 */
+  chargeExclusive: number;
   pinned: number;
   pinnedFound: number;
   /** 置顶评论里带链接片段的条数 */
@@ -377,20 +426,15 @@ async function enrich(
     // 列表接口里的简介可能被截断，以详情为准
     if (d.desc !== undefined) out.desc = d.desc;
     if (d.pubdate !== undefined) out.pubdate = d.pubdate;
-    if (d.title && !out.title) out.title = d.title;
+    // 以接口返回的标题为准：从页面链接读到的标题可能混进封面上的文字
+    if (d.title) out.title = d.title;
+    if (d.is_upower_exclusive === true) {
+      out.badges = ['充电专属'];
+      stats.chargeExclusive++;
+    }
     stats.view++;
   } catch (e) {
     stats.errors.push(`view ${video.bvid}: ${e instanceof Error ? e.message : e}`);
-  }
-
-  try {
-    const tags = await getJson<Array<{ tag_name?: string }>>(
-      `${API}/x/tag/archive/tags?bvid=${video.bvid}`,
-    );
-    out.tags = tags.map((t) => t.tag_name ?? '').filter(Boolean);
-    stats.tags++;
-  } catch {
-    // 标签是次要信息，失败不记错误明细，只体现在成功计数里
   }
 
   if (aid !== undefined) {
@@ -409,8 +453,12 @@ async function enrich(
             stats.pinnedWithLinks++;
           }
           for (const r of pinned.raw) {
-            // 按「片段是不是网址」分两类，各留一个样例
-            const kind = /^https?:\/\//.test(r.keyword) ? '网址片段' : '文字片段';
+            // 分三类各留一个样例：网址、视频编号、其他文字（搜索词属于这一类）
+            const kind = /^https?:\/\//.test(r.keyword)
+              ? '网址片段'
+              : /^(BV[0-9A-Za-z]{10}|av\d+)$/i.test(r.keyword)
+                ? '视频编号片段'
+                : '其他文字片段';
             if (!stats.linkSamples.has(kind)) {
               stats.linkSamples.set(
                 kind,
@@ -431,6 +479,8 @@ async function enrich(
       );
     }
   }
+  // 每条视频之间稍作停顿，降低短时间内的请求密度（D-33）
+  await sleep(REQUEST_GAP_MS);
   return out;
 }
 
@@ -493,11 +543,11 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
   const profile = await loadProfile(mid, keys, c);
 
   onProgress('读取视频列表');
-  const { list, source: videoSource } = await loadVideoList(mid, keys, c);
+  const { list, source: videoSource } = await loadVideoList(mid, c, onProgress);
 
   const stats: DetailStats = {
     view: 0,
-    tags: 0,
+    chargeExclusive: 0,
     pinned: 0,
     pinnedFound: 0,
     pinnedWithLinks: 0,
@@ -518,8 +568,12 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     if (n > 0 && okCount === 0) c.fail(item, path, detail);
     else c.ok(item, path, detail);
   };
-  report('视频简介', '接口 view', stats.view);
-  report('视频标签', '接口 tag/archive/tags', stats.tags);
+  report(
+    '视频标题、简介、发布时间',
+    '接口 view',
+    stats.view,
+    `，其中 ${stats.chargeExclusive} 条被平台标记为充电专属`,
+  );
   const paths = Object.entries(stats.pinnedPaths)
     .map(([name, count]) => `${name} ×${count}`)
     .join('、');

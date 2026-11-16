@@ -2,7 +2,7 @@
 
 在 B 站 UP 主空间页一键分析，给出该创作者的**商业化程度指数**（0–100），并说明分数含义、计算方式和每一条依据。
 
-> 状态：代码已完成并通过单元测试与构建；**尚未在真实的 B 站页面上验证数据提取**。当前进度见 [docs/DECISIONS.md](docs/DECISIONS.md) 末尾的「进度」一节。
+> 状态：已在真实的 B 站页面上跑通，能给出带依据的报告。数据提取仍有不稳定的路径，校准尚未开始。当前进度见 [docs/DECISIONS.md](docs/DECISIONS.md) 末尾的「进度」一节，每次真实页面验证的记录见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 这个分数是什么
 

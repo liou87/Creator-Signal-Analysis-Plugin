@@ -24,6 +24,7 @@ const FIELD_LABEL: Record<TextField, string> = {
   tags: '标签',
   pinnedComment: '置顶评论',
   bio: '个人简介',
+  badge: '平台标记',
 };
 const TRI_LABEL: Record<Tri, string> = { yes: '有', no: '无', unknown: '未能检查' };
 
@@ -57,8 +58,8 @@ function emptySampleNote(content: Report['content']): string {
   if (content.source === 'page') {
     return `只从当前页面上读到 ${content.fetched} 条视频${latest}，都不在最近 ${cfg.window.maxAgeMonths} 个月内。页面上显示的不一定是最新投稿，所以不能据此认为「最近没有商业内容」。`;
   }
-  if (content.fetched === 0) return '接口显示这位创作者没有公开投稿。';
-  return `接口返回了 ${content.fetched} 条投稿${latest}，最近 ${cfg.window.maxAgeMonths} 个月内没有新投稿。`;
+  if (content.fetched === 0) return '投稿列表显示这位创作者没有公开投稿。';
+  return `取到了最近的 ${content.fetched} 条投稿${latest}，最近 ${cfg.window.maxAgeMonths} 个月内没有新投稿。`;
 }
 
 export function ReportView({ report, llmError }: { report: Report; llmError?: string }) {
@@ -273,7 +274,7 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
         <h3>局限</h3>
         <ul className="notes">
           <li>没有披露、也没有链接的合作看不到，所以分数是下界。</li>
-          <li>只读标题、简介、标签、置顶评论，不看画面和口播，也不读图片上的字。</li>
+          <li>只读标题、简介、置顶评论和平台标记，不看画面和口播，也不读图片上的字。</li>
           <li>没有按分区做归一化，测评类创作者天然偏高。</li>
           <li>权重是先验设定，不是数据拟合的结果。</li>
         </ul>

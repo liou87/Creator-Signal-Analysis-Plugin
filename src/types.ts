@@ -19,7 +19,7 @@ export type MonetizationType = 'brand' | 'goods' | 'self' | 'knowledge' | 'fan';
 /** 三态：有 / 无 / 未能检查。没抓到不等于没有（D-13） */
 export type Tri = 'yes' | 'no' | 'unknown';
 
-export type TextField = 'title' | 'desc' | 'tags' | 'pinnedComment' | 'bio';
+export type TextField = 'title' | 'desc' | 'tags' | 'pinnedComment' | 'bio' | 'badge';
 
 export interface VideoItem {
   bvid: string;
@@ -28,7 +28,13 @@ export interface VideoItem {
   /** 发布时间，Unix 秒。取不到时为 undefined */
   pubdate?: number;
   desc?: string;
+  /** 目前不采集（D-33），保留字段以便将来恢复 */
   tags?: string[];
+  /**
+   * 平台给这条视频打的标记，用平台自己显示的文字，如「充电专属」。
+   * 这是结构化事实，但仍以文字形式进入规则，保证证据的引用有出处
+   */
+  badges?: string[];
   /** UP 主置顶的评论正文。B 站带货蓝链多在这里（D-12） */
   pinnedComment?: string;
   /**
@@ -49,12 +55,12 @@ export interface PinnedLink {
 }
 
 /**
- * 视频列表从哪里来：
- *   api  接口返回的最近投稿，可以认为是完整的
- *   page 只是当前页面上看得到的视频，不一定是最近的投稿
- *   none 所有路径都没走通
+ * 视频列表是什么性质的：
+ *   latest 最近投稿（来自接口，或来自投稿页），可以用来判断「最近有没有」
+ *   page   只是当前页面上看得到的视频，不一定是最近的投稿
+ *   none   所有路径都没走通
  */
-export type VideoSource = 'api' | 'page' | 'none';
+export type VideoSource = 'latest' | 'page' | 'none';
 
 /** 提取层对每个数据源的自检结果（D-17） */
 export interface SourceStatus {

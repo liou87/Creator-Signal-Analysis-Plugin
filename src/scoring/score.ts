@@ -139,7 +139,7 @@ export function score(
     .map((v) => v.pubdate)
     .filter((d): d is number => d !== undefined);
   const latestPubdate = allDates.length ? Math.max(...allDates) : undefined;
-  const assessed = n > 0 || snapshot.videoSource === 'api';
+  const assessed = n > 0 || snapshot.videoSource === 'latest';
 
   // 置信度：样本太少为低；有未能检查的项为中；否则为高
   const reasons: string[] = [];
@@ -151,7 +151,9 @@ export function score(
   }
   if (snapshot.videoSource === 'page' && n > 0) {
     level = 'mid';
-    reasons.push('视频列表来自当前页面上看得到的部分，不一定是最近的投稿');
+    reasons.push(
+      '视频列表来自当前页面上看得到的部分，不一定是最近的投稿。切到「投稿」标签页后重新分析可以改善',
+    );
   }
   if (!assessed) {
     level = 'low';

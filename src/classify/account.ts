@@ -53,12 +53,21 @@ export function classifyAccount(
   const entry = (state: Tri, name: string) =>
     state === 'yes' ? { state, basis: `接口或页面显示已开通${name}` } : { state };
 
+  // 充电没查到时，如果样本里有充电专属视频，那充电一定是开通了的
+  let charge: { state: Tri; basis?: string } = entry(snapshot.hasCharge, '充电');
+  if (charge.state !== 'yes') {
+    const exclusive = videos.find((v) => v.badges?.includes('充电专属'));
+    if (exclusive) {
+      charge = { state: 'yes', basis: `有充电专属视频：《${exclusive.title}》` };
+    }
+  }
+
   return [
     { id: 'businessContact', ...business },
     { id: 'shop', ...entry(snapshot.hasShop, '小店/橱窗') },
     { id: 'course', ...entry(snapshot.hasCourse, '课程') },
     { id: 'offsite', ...fromBio(snapshot.bio, OFFSITE) },
     { id: 'org', ...org },
-    { id: 'charge', ...entry(snapshot.hasCharge, '充电') },
+    { id: 'charge', ...charge },
   ];
 }

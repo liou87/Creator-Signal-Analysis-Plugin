@@ -146,6 +146,7 @@ export function videoFields(video: VideoItem): Array<{ field: TextField; text: s
   if (video.desc) fields.push({ field: 'desc', text: video.desc });
   if (video.tags?.length) fields.push({ field: 'tags', text: video.tags.join(' ') });
   if (video.pinnedComment) fields.push({ field: 'pinnedComment', text: video.pinnedComment });
+  if (video.badges?.length) fields.push({ field: 'badge', text: video.badges.join(' ') });
   return fields;
 }
 

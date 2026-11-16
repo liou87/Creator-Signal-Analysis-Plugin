@@ -187,7 +187,7 @@ describe('账号层', () => {
     hasShop: 'no',
     hasCourse: 'no',
     videos: [],
-    videoSource: 'api',
+    videoSource: 'latest',
     capturedAt: 0,
     sources: [],
   };
@@ -224,5 +224,41 @@ describe('账号层', () => {
   it('入口类信号直接取自快照', () => {
     expect(state({ ...base, hasShop: 'yes' }, 'shop')).toBe('yes');
     expect(state({ ...base, hasCharge: 'unknown' }, 'charge')).toBe('unknown');
+  });
+});
+
+describe('平台标记（真实页面验证后新增）', () => {
+  it('充电专属来自平台标记，而不是碰巧出现在标题里的文字', () => {
+    const video = v({ title: '长篇纪录片', badges: ['充电专属'] });
+    const [hit] = classifyVideoByRules(video, false);
+    expect(hit).toMatchObject({
+      tier: 'B',
+      type: 'fan',
+      field: 'badge',
+      quote: '充电专属',
+      reason: 'B7-充电专属',
+    });
+  });
+
+  it('样本里有充电专属视频 → 充电一定开通了，即使接口没查到', () => {
+    const snapshot: CreatorSnapshot = {
+      mid: '1',
+      name: 't',
+      bio: '',
+      officialTitle: '',
+      hasCharge: 'unknown',
+      hasShop: 'no',
+      hasCourse: 'no',
+      videos: [],
+      videoSource: 'latest',
+      capturedAt: 0,
+      sources: [],
+    };
+    const videos = [v({ title: '长篇纪录片', badges: ['充电专属'] })];
+    const charge = classifyAccount(snapshot, videos).find((a) => a.id === 'charge');
+    expect(charge).toMatchObject({ state: 'yes' });
+    expect(charge?.basis).toContain('长篇纪录片');
+    // 没有这类视频时保持「未能检查」
+    expect(classifyAccount(snapshot, []).find((a) => a.id === 'charge')?.state).toBe('unknown');
   });
 });

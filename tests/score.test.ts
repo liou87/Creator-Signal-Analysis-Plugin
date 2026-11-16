@@ -27,7 +27,7 @@ function run(n: number, tiers: Tier[], account: AccountFinding[] = allNo) {
   const vs = videos(n);
   const evidence = tiers.map((t, i) => ev(`BV${i}`, t));
   return score(
-    { mid: '1', name: '测试', capturedAt: NOW, sources: [], videos: vs, videoSource: 'api' },
+    { mid: '1', name: '测试', capturedAt: NOW, sources: [], videos: vs, videoSource: 'latest' },
     vs,
     evidence,
     account,
@@ -61,7 +61,7 @@ describe('内容层公式', () => {
   it('一条视频同时命中多档时取最高档，只算一次', () => {
     const vs = videos(10);
     const r = score(
-      { mid: '1', name: 't', capturedAt: NOW, sources: [], videos: vs, videoSource: 'api' },
+      { mid: '1', name: 't', capturedAt: NOW, sources: [], videos: vs, videoSource: 'latest' },
       vs,
       [ev('BV0', 'C'), ev('BV0', 'A'), ev('BV0', 'B')],
       [],
@@ -199,7 +199,7 @@ describe('取不到视频不等于没有商业内容（D-27）', () => {
   });
 
   it('接口返回了投稿但都在窗口之外 → 可以评估，结论是最近没有投稿', () => {
-    const r = runWith(old, 'api');
+    const r = runWith(old, 'latest');
     expect(r.content.assessed).toBe(true);
     expect(r.content.point).toBe(0);
     expect(r.content.latestPubdate).toBe(old[0]!.pubdate);
