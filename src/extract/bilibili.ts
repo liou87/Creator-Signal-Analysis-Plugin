@@ -611,7 +611,7 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     item: '充电',
     path: '接口 acc/info，其次页面文字',
     ok: charge !== 'unknown',
-    detail: `接口：${TRI_TEXT[profile.charge]}；页面：${entries.charge === 'yes' ? '看到充电按钮' : '没看到充电按钮（不能据此认为没有）'}；采用：${TRI_TEXT[charge]}`,
+    detail: `接口：${TRI_TEXT[profile.charge]}；页面：${entries.charge === 'yes' ? '看到充电按钮' : '没看到充电按钮（不能据此认为没有）'}；采用：${TRI_TEXT[charge]}。这是提取层的结果；样本里有充电专属视频时，账号层会另行判为有`,
   });
 
   return {
