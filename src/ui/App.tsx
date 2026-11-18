@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
+import type { LlmCheck } from '../classify';
 import { analyze, identifyActiveTab, type Identity } from '../pipeline';
 import type { Report } from '../types';
 import { ReportView } from './ReportView';
@@ -8,7 +9,7 @@ import { Settings } from './Settings';
 type Phase =
   | { kind: 'idle' }
   | { kind: 'running'; text: string }
-  | { kind: 'done'; report: Report; llmError?: string }
+  | { kind: 'done'; report: Report; llmError?: string; llmCheck?: LlmCheck }
   | { kind: 'error'; message: string };
 
 export function App() {
@@ -117,7 +118,7 @@ export function App() {
         </section>
       )}
 
-      {phase.kind === 'done' && <ReportView report={phase.report} llmError={phase.llmError} />}
+      {phase.kind === 'done' && <ReportView report={phase.report} llmError={phase.llmError} llmCheck={phase.llmCheck} />}
 
       <Settings />
     </main>

@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { classifyAccount } from './classify/account';
-import { classifyVideos } from './classify';
+import { classifyVideos, type LlmCheck } from './classify';
 import { summarizeHistory } from './classify/history';
 import type { KeyValueStore, LlmConfig } from './classify/llm';
 import { midFromUrl } from './extract/identify';
@@ -91,6 +91,7 @@ export async function identifyActiveTab(): Promise<Identity | null> {
 export interface AnalysisResult {
   report: Report;
   llmError?: string;
+  llmCheck?: LlmCheck;
 }
 
 export async function analyze(
@@ -117,5 +118,5 @@ export async function analyze(
     llmUsed: classified.llmUsed,
     history: summarizeHistory(snapshot.videos, videos),
   });
-  return { report, llmError: classified.llmError };
+  return { report, llmError: classified.llmError, llmCheck: classified.llmCheck };
 }

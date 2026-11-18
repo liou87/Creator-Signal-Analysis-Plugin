@@ -1,3 +1,4 @@
+import type { LlmCheck, SuspectedComparison } from '../classify';
 import { DEFAULT_CONFIG } from '../scoring/config';
 import type { Band, Confidence, MonetizationType, Report, TextField, Tier, Tri } from '../types';
 
@@ -65,7 +66,94 @@ function emptySampleNote(content: Report['content']): string {
   return `取到了最近的 ${content.fetched} 条投稿${latest}，最近 ${cfg.window.maxAgeMonths} 个月内没有新投稿。`;
 }
 
-export function ReportView({ report, llmError }: { report: Report; llmError?: string }) {
+const videoUrl = (bvid: string) => `https://www.bilibili.com/video/${bvid}`;
+
+/** 模型对照（不计分）：把模型和关键词对疑似档的判定并排列出，用来人工核对模型判得对不对 */
+function LlmCheckView({ check }: { check: LlmCheck }) {
+  const both = check.rows.filter((r) => r.llm && r.keyword);
+  const llmOnly = check.rows.filter((r) => r.llm && !r.keyword);
+  const keywordOnly = check.rows.filter((r) => !r.llm && r.keyword);
+  const llmCount = both.length + llmOnly.length;
+  const keywordCount = both.length + keywordOnly.length;
+  const cached = check.sent - check.requested;
+
+  const group = (title: string, rows: SuspectedComparison[]) =>
+    rows.length > 0 && (
+      <>
+        <h4>
+          {title}（{rows.length}）
+        </h4>
+        <ul className="evidence">
+          {rows.map(({ video, llm, keyword }) => (
+            <li key={video.bvid}>
+              <a href={video.url || videoUrl(video.bvid)} target="_blank" rel="noreferrer">
+                {video.title || video.bvid}
+              </a>
+              {llm && (
+                <div>
+                  <span className="muted">
+                    模型 · {FIELD_LABEL[llm.field]} · {llm.reason}
+                  </span>
+                  <blockquote>{llm.quote}</blockquote>
+                </div>
+              )}
+              {keyword && (
+                <div>
+                  <span className="muted">
+                    关键词 · {FIELD_LABEL[keyword.field]} · {keyword.reason}
+                  </span>
+                  <blockquote>{keyword.quote}</blockquote>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </>
+    );
+
+  return (
+    <details open={!check.used}>
+      <summary>
+        模型对照（不计分）：模型判疑似 {llmCount} 条 · 关键词 {keywordCount} 条 · 两者都判 {both.length} 条
+      </summary>
+      <p className="muted">
+        模型 {check.model} · 提示词 {check.promptVersion} · 送判 {check.sent} 条（规则已判为确证的不送）
+        {cached > 0 ? `，其中 ${cached} 条用的是缓存` : ''} · 得到结论 {check.judged} 条 · 本次计分采用
+        {check.used ? '模型的结论' : '关键词（模型没有判完全部视频，两种口径不混用）'}
+      </p>
+      {check.error && <p className="warn">出错：{check.error}</p>}
+      {group('两者都判为疑似', both)}
+      {group('只有模型判为疑似', llmOnly)}
+      {group('只有关键词判为疑似', keywordOnly)}
+      {check.rows.length === 0 && <p className="muted">两种方法都没有判出疑似软广。</p>}
+      {check.rejected.length > 0 && (
+        <>
+          <h4>未采纳的模型输出（{check.rejected.length}）</h4>
+          <ul className="notes">
+            {check.rejected.map((r, i) => (
+              <li key={i}>
+                <a href={videoUrl(r.bvid)} target="_blank" rel="noreferrer">
+                  {r.bvid}
+                </a>
+                ：{r.reason}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </details>
+  );
+}
+
+export function ReportView({
+  report,
+  llmError,
+  llmCheck,
+}: {
+  report: Report;
+  llmError?: string;
+  llmCheck?: LlmCheck;
+}) {
   const { total, content, account } = report;
   const hits = report.verdicts.filter((v) => v.tier !== null);
   const types = (Object.keys(report.typeCounts) as MonetizationType[]).filter(
@@ -360,6 +448,7 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
             </tbody>
           </table>
         </details>
+        {llmCheck && <LlmCheckView check={llmCheck} />}
       </section>
     </>
   );

@@ -190,6 +190,36 @@ describe('确证的构成（D-35）', () => {
   });
 });
 
+describe('模型对照（不计分）', () => {
+  it('列出模型与关键词的分歧和未采纳的输出', async () => {
+    const report = await run();
+    const html = renderToStaticMarkup(
+      <ReportView
+        report={report}
+        llmCheck={{
+          model: 'deepseek-chat',
+          promptVersion: 'v2',
+          sent: 17,
+          requested: 17,
+          judged: 16,
+          rejected: [{ bvid: 'BV0000000007', reason: '引用不是原文：「xx」' }],
+          used: false,
+          rows: [
+            {
+              video: snapshot.videos[3]!,
+              keyword: { bvid: snapshot.videos[3]!.bvid, tier: 'C', type: 'brand', quote: '粉丝专属福利', field: 'desc', source: 'rule', reason: 'C1' },
+            },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain('模型对照（不计分）：模型判疑似 0 条 · 关键词 1 条');
+    expect(html).toContain('只有关键词判为疑似（1）');
+    expect(html).toContain('本次计分采用关键词');
+    expect(html).toContain('BV0000000007</a>：引用不是原文');
+  });
+});
+
 describe('窗口之外的历史（D-45）', () => {
   // 真实情形：最近一年只发了 1 条，更早的视频置顶评论里挂过商品链接（第十次验证的小号）
   const inactive: CreatorSnapshot = {

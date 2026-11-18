@@ -112,6 +112,36 @@ describe('调用与缓存（D-10）', () => {
     expect(JSON.parse(init.body as string).temperature).toBe(0);
   });
 
+  it('分批请求：25 条分 3 批，避免输出过长被截断', async () => {
+    const many: VideoItem[] = Array.from({ length: 25 }, (_, i) => ({ bvid: `BV_${i}`, title: `t${i}`, url: '' }));
+    const fetchFn = vi.fn(async (_url: string, init: RequestInit) => {
+      const sent = JSON.parse(JSON.parse(init.body as string).messages[1].content) as Array<{ id: string }>;
+      const results = sent.map((s) => ({ id: s.id, verdict: 'none' }));
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ results }) } }] }));
+    }) as unknown as typeof fetch;
+    const r = await classifySuspectedByLlm(many, cfg, undefined, fetchFn);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(r.judged).toBe(25);
+    expect(r.requested).toBe(25);
+  });
+
+  it('记录每条未采纳的原因，用于自检', async () => {
+    const r = await classifySuspectedByLlm(
+      videos,
+      cfg,
+      undefined,
+      fakeFetch([
+        { id: 'BV_a', verdict: 'soft_ad', quote: '原文里没有这句' },
+        { id: 'BV_fake', verdict: 'none' },
+      ]),
+    );
+    expect(r.rejected).toEqual([
+      { bvid: 'BV_a', reason: '引用不是原文：「原文里没有这句」' },
+      { bvid: 'BV_fake', reason: '编号不在本次输入里' },
+      { bvid: 'BV_b', reason: '模型没有返回这条' },
+    ]);
+  });
+
   it('哈希稳定且对内容敏感', () => {
     expect(hashText('abc')).toBe(hashText('abc'));
     expect(hashText('abc')).not.toBe(hashText('abd'));
@@ -157,6 +187,30 @@ describe('分类入口', () => {
     expect(r.llmUsed).toBe(false);
     expect(r.llmError).toContain('401');
     expect(r.evidence.some((e) => e.tier === 'C' && e.source === 'rule')).toBe(true);
+  });
+
+  it('模型对照：两种口径并排列出，不影响计分', async () => {
+    // BV_a 关键词判疑似（粉丝专属价）；模型判 BV_b 疑似、BV_a 不是
+    const hiking: VideoItem = { ...videos[1]!, desc: '天气很好，这件冲锋衣点击下方链接领券' };
+    vi.stubGlobal(
+      'fetch',
+      fakeFetch([
+        { id: 'BV_a', verdict: 'none' },
+        { id: 'BV_b', verdict: 'soft_ad', quote: '冲锋衣点击下方链接领券', reason: '有购买引导' },
+      ]),
+    );
+    const r = await classifyVideos([videos[0]!, hiking], cfg);
+    vi.unstubAllGlobals();
+    expect(r.llmUsed).toBe(true);
+    expect(r.llmCheck).toMatchObject({ model: 'm', promptVersion: 'v2', sent: 2, judged: 2, used: true });
+    const rows = r.llmCheck!.rows.map((x) => [x.video.bvid, !!x.llm, !!x.keyword]);
+    expect(rows).toContainEqual(['BV_a', false, true]);
+    // 计分只用模型的结论
+    expect(r.evidence.filter((e) => e.tier === 'C').map((e) => e.bvid)).toEqual(['BV_b']);
+  });
+
+  it('没有配置模型时没有对照', async () => {
+    expect((await classifyVideos(videos)).llmCheck).toBeUndefined();
   });
 
   it('模型漏判部分视频时也退回关键词，不混用两种口径', async () => {
