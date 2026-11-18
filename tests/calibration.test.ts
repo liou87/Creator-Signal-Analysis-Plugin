@@ -21,17 +21,19 @@ interface Point {
   unknown: AccountSignalId[];
 }
 
+// D-53：充电只认样本里的充电专属视频（食贫道）。颜辰鑫、极客湾、何同学、大物是也原来的「有」
+// 来自 acc/info 的 elec 字段，该字段含义未证实，改为未能检查。
 const DATA: Point[] = [
   { name: '共青团中央', group: '低分组', n: 30, certain: 0, suspected: 0, yes: [], unknown: ['charge'] },
   { name: '华西医院', group: '低分组', n: 30, certain: 0, suspected: 0, yes: [], unknown: ['charge'] },
-  { name: '颜辰鑫', group: '低分组', n: 2, certain: 0, suspected: 0, yes: ['charge'], unknown: [] },
+  { name: '颜辰鑫', group: '低分组', n: 2, certain: 0, suspected: 0, yes: [], unknown: ['charge'] },
   { name: 'JOYE呗', group: '不活跃', n: 1, certain: 0, suspected: 0, yes: [], unknown: ['charge'] },
   { name: '所长林超', group: '不活跃', n: 6, certain: 0, suspected: 0, yes: ['course'], unknown: ['charge'] },
-  { name: '极客湾', group: '活跃', n: 30, certain: 0, suspected: 0, yes: ['businessContact', 'charge'], unknown: [] },
+  { name: '极客湾', group: '活跃', n: 30, certain: 0, suspected: 0, yes: ['businessContact'], unknown: ['charge'] },
   { name: '影视飓风', group: '活跃', n: 30, certain: 4, suspected: 0, yes: ['businessContact', 'shop', 'course'], unknown: ['charge'] },
-  { name: '何同学', group: '活跃', n: 18, certain: 4, suspected: 0, yes: ['businessContact', 'charge'], unknown: [] },
+  { name: '何同学', group: '活跃', n: 18, certain: 4, suspected: 0, yes: ['businessContact'], unknown: ['charge'] },
   // D-49：置顶评论「去我首页小店里看一下」→ 该视频由疑似外的「无」变为确证，店铺为有
-  { name: '大物是也', group: '活跃', n: 30, certain: 9, suspected: 1, yes: ['shop', 'charge'], unknown: [] },
+  { name: '大物是也', group: '活跃', n: 30, certain: 9, suspected: 1, yes: ['shop'], unknown: ['charge'] },
   { name: '食贫道', group: '活跃', n: 30, certain: 13, suspected: 0, yes: ['businessContact', 'charge'], unknown: [] },
 ];
 

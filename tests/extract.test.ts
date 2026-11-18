@@ -81,7 +81,7 @@ describe('识别创作者', () => {
       name: '某某',
       bio: '商务合作请联系vx：abc',
       officialTitle: '知名美食UP主',
-      charge: 'unknown',
+      elecRaw: null,
     });
   });
 

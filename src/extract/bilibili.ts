@@ -84,14 +84,16 @@ interface AccInfo {
   name?: string;
   sign?: string;
   official?: { title?: string; desc?: string };
-  elec?: { show_info?: { show?: boolean } };
+  /** 含义未证实：成功取到的每一次都是「显示充电」，包括政府机构号。只写进自检，不计分（D-53） */
+  elec?: unknown;
 }
 
 export interface Profile {
   name: string | null;
   bio: string | null;
   officialTitle: string | null;
-  charge: Tri;
+  /** acc/info 返回的 elec 字段原文，供核对；没取到为 null */
+  elecRaw: string | null;
 }
 
 async function loadProfile(mid: string, keys: WbiKeys | null, c: Collector): Promise<Profile> {
@@ -101,12 +103,11 @@ async function loadProfile(mid: string, keys: WbiKeys | null, c: Collector): Pro
         signed('/x/space/wbi/acc/info', { mid, platform: 'web' }, keys),
       );
       c.ok('昵称、简介、认证', '接口 acc/info');
-      const show = d.elec?.show_info?.show;
       return {
         name: d.name ?? null,
         bio: d.sign ?? '',
         officialTitle: [d.official?.title, d.official?.desc].filter(Boolean).join(' '),
-        charge: show === undefined ? 'unknown' : show ? 'yes' : 'no',
+        elecRaw: d.elec === undefined ? '（返回里没有这个字段）' : JSON.stringify(d.elec).slice(0, 200),
       };
     } catch (e) {
       c.fail('昵称、简介、认证', '接口 acc/info', e);
@@ -126,7 +127,7 @@ async function loadProfile(mid: string, keys: WbiKeys | null, c: Collector): Pro
   const name = nameFromTitle(document.title);
   if (name) c.ok('昵称', '页面标题（备用）', '简介与认证未能取到');
   else c.fail('昵称', '页面标题（备用）', `标题格式不符：「${document.title.slice(0, 40)}」`);
-  return { name, bio: null, officialTitle: null, charge: 'unknown' };
+  return { name, bio: null, officialTitle: null, elecRaw: null };
 }
 
 interface CardData {
@@ -144,7 +145,7 @@ export function profileFromCard(d: CardData): Profile {
     name: d.card?.name ?? null,
     bio: d.card?.sign ?? '',
     officialTitle: [official?.title, official?.desc].filter(Boolean).join(' '),
-    charge: 'unknown',
+    elecRaw: null,
   };
 }
 
@@ -868,13 +869,14 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     ok: true,
     detail: `小店：${entries.shop === 'yes' ? '看到入口' : '没看到'}；课程：${entries.course === 'yes' ? '看到入口' : '没看到'}。导航栏标签：${nav.length ? nav.join(' / ') : '没有认出导航栏'}`,
   });
-  // 充电：接口给了明确答案就用接口的；否则页面上看到按钮算「有」，看不到算「未能检查」
-  const charge = profile.charge !== 'unknown' ? profile.charge : entries.charge;
+  // 充电：页面上看到按钮算「有」，看不到算「未能检查」。acc/info 的 elec 字段含义未证实，只记录不采用（D-53）。
+  // 样本里有充电专属视频时，账号层会另行判为有（D-34）。
+  const charge = entries.charge;
   c.sources.push({
     item: '充电',
-    path: '接口 acc/info，其次页面文字',
+    path: '页面文字；接口 acc/info 的 elec 字段只记录（D-53）',
     ok: charge !== 'unknown',
-    detail: `接口：${TRI_TEXT[profile.charge]}；页面：${entries.charge === 'yes' ? '看到充电按钮' : '没看到充电按钮（不能据此认为没有）'}；采用：${TRI_TEXT[charge]}。这是提取层的结果；样本里有充电专属视频时，账号层会另行判为有`,
+    detail: `页面：${entries.charge === 'yes' ? '看到充电按钮' : '没看到充电按钮（不能据此认为没有）'}；采用：${TRI_TEXT[charge]}。接口 elec 字段原文（不计分）：${profile.elecRaw ?? '接口没走通'}。这是提取层的结果；样本里有充电专属视频时，账号层会另行判为有`,
   });
 
   return {
