@@ -9,7 +9,7 @@ import { videoFields } from './rules';
  *   3. 引用必须是该视频原文的子串
  */
 
-export const PROMPT_VERSION = 'v2';
+export const PROMPT_VERSION = 'v3';
 
 export interface LlmConfig {
   /** OpenAI 兼容接口地址，如 https://api.example.com/v1 */
@@ -43,6 +43,7 @@ const SYSTEM_PROMPT = `你是内容分类器。输入是若干条 B 站视频的
 乙、创作者用口语承认这一期是商业合作，如「这期恰个饭」「感谢金主爸爸」。
 只是提到或评测某个品牌、没有行动引导的，不算。
 只是在讨论商单、广告这个话题（如讲怎么接商单、吐槽广告），也不算。
+创作者为自己的账号发起的互动（抽奖、送福利、关注、点赞、投币、转发），也不算：从这类话术看不出有谁在付钱。
 
 只输出 JSON，格式：
 {"results":[{"id":"视频编号","verdict":"soft_ad 或 none","type":"brand 或 self 或 knowledge","quote":"原文中体现行动引导的一小段，必须逐字摘自输入","reason":"不超过 20 字"}]}

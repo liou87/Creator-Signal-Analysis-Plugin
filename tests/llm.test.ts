@@ -3,6 +3,7 @@ import { classifyVideos } from '../src/classify';
 import {
   classifySuspectedByLlm,
   hashText,
+  PROMPT_VERSION,
   validateLlmResults,
   type KeyValueStore,
   type LlmConfig,
@@ -142,6 +143,15 @@ describe('调用与缓存（D-10）', () => {
     ]);
   });
 
+  it('提示词排除创作者自己的抽奖等互动（D-48，真实误判：iPhone 抽奖）', async () => {
+    const fetchFn = fakeFetch([]);
+    await classifySuspectedByLlm(videos, cfg, undefined, fetchFn);
+    const init = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit;
+    const system = JSON.parse(init.body as string).messages[0].content as string;
+    expect(system).toContain('创作者为自己的账号发起的互动（抽奖');
+    expect(PROMPT_VERSION).toBe('v3');
+  });
+
   it('哈希稳定且对内容敏感', () => {
     expect(hashText('abc')).toBe(hashText('abc'));
     expect(hashText('abc')).not.toBe(hashText('abd'));
@@ -202,7 +212,7 @@ describe('分类入口', () => {
     const r = await classifyVideos([videos[0]!, hiking], cfg);
     vi.unstubAllGlobals();
     expect(r.llmUsed).toBe(true);
-    expect(r.llmCheck).toMatchObject({ model: 'm', promptVersion: 'v2', sent: 2, judged: 2, used: true });
+    expect(r.llmCheck).toMatchObject({ model: 'm', promptVersion: PROMPT_VERSION, sent: 2, judged: 2, used: true });
     const rows = r.llmCheck!.rows.map((x) => [x.video.bvid, !!x.llm, !!x.keyword]);
     expect(rows).toContainEqual(['BV_a', false, true]);
     // 计分只用模型的结论

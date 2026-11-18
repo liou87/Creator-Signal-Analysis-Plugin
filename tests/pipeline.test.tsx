@@ -198,7 +198,7 @@ describe('模型对照（不计分）', () => {
         report={report}
         llmCheck={{
           model: 'deepseek-chat',
-          promptVersion: 'v2',
+          promptVersion: 'v3',
           sent: 17,
           requested: 17,
           judged: 16,
