@@ -78,7 +78,12 @@ export function score(
   videos: VideoItem[],
   evidence: Evidence[],
   account: AccountFinding[],
-  options: { llmUsed: boolean; config?: ScoringConfig },
+  options: {
+    llmUsed: boolean;
+    config?: ScoringConfig;
+    /** 窗口之外的历史，只展示不计分（D-45）。由调用方用 summarizeHistory 算好传入 */
+    history?: Report['history'];
+  },
 ): Report {
   const cfg = options.config ?? DEFAULT_CONFIG;
   const verdicts = buildVerdicts(videos, evidence);
@@ -195,6 +200,7 @@ export function score(
     typeCounts,
     verdicts,
     confidence: { level, reasons },
+    history: options.history ?? { checked: 0, videos: [] },
     llmUsed: options.llmUsed,
     sources: snapshot.sources,
   };

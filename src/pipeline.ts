@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import { classifyAccount } from './classify/account';
 import { classifyVideos } from './classify';
+import { summarizeHistory } from './classify/history';
 import type { KeyValueStore, LlmConfig } from './classify/llm';
 import { midFromUrl } from './extract/identify';
 import type { ContentRequest, ContentResponse } from './messages';
@@ -114,6 +115,7 @@ export async function analyze(
 
   const report = score(snapshot, videos, classified.evidence, account, {
     llmUsed: classified.llmUsed,
+    history: summarizeHistory(snapshot.videos, videos),
   });
   return { report, llmError: classified.llmError };
 }

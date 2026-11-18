@@ -276,6 +276,41 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
         </section>
       )}
 
+      {report.history.checked > 0 && (
+        <section className="card">
+          <h2>窗口之外（不计分）</h2>
+          <p>
+            取到的视频里还有 {report.history.checked} 条发布于 {cfg.window.maxAgeMonths}{' '}
+            个月之前，不计入分数。
+            {report.history.videos.length > 0
+              ? `其中 ${report.history.videos.length} 条带确证的商业内容，最新一条发布于 ${day(report.history.videos[0]!.video.pubdate!)}。`
+              : '其中没有发现确证的商业内容。'}
+          </p>
+          {report.history.videos.length > 0 && (
+            <ul className="evidence">
+              {report.history.videos.slice(0, 3).map(({ video, evidence: e }) => (
+                <li key={video.bvid}>
+                  <a href={video.url} target="_blank" rel="noreferrer">
+                    {video.title || video.bvid}
+                  </a>{' '}
+                  <span className="muted">{video.pubdate ? day(video.pubdate) : ''}</span>
+                  <div className="quote">
+                    <span className={`tier tier-${e.tier}`}>{TIER_LABEL[e.tier]}</span>
+                    <span className="muted">
+                      {TYPE_LABEL[e.type]} · {FIELD_LABEL[e.field]} · 规则 {e.reason}
+                    </span>
+                    <blockquote>{e.quote}</blockquote>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="muted">
+            指数看的是最近的状态。这里只用来区分「从来不做」和「以前做过、最近不做」；只看规则认定的确证内容，范围限于这次取到的视频。
+          </p>
+        </section>
+      )}
+
       <section className="card">
         <h2>置信度：{CONF_LABEL[report.confidence.level]}</h2>
         {report.confidence.reasons.length > 0 ? (
@@ -295,6 +330,14 @@ export function ReportView({ report, llmError }: { report: Report; llmError?: st
           <li>只读标题、简介、置顶评论和平台标记，不看画面和口播，也不读图片上的字。</li>
           <li>没有按分区做归一化，测评类创作者天然偏高。</li>
           <li>权重是先验设定，不是数据拟合的结果。</li>
+          <li>
+            取样按条数而不是按时间：发得多的人只覆盖几周，发得少的人覆盖一年，时间口径不同。窗口如果落在
+            618、双 11 这类大促期间，带货占比会偏高。
+          </li>
+          <li>
+            30 条视频估出的占比误差很大（例如 30 条里 8 条，真实比例大致在 0.14 到 0.44
+            之间），区间里没有包含这部分误差。所以只分三档，分数接近的两个人不能据此排先后。
+          </li>
         </ul>
       </section>
 

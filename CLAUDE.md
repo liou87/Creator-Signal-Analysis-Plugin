@@ -46,7 +46,7 @@ npm run dev        # 开发模式
 entrypoints/        插件入口。background 只负责打开侧边栏；content 在空间页里跑提取
 src/types.ts        三个核心数据结构：CreatorSnapshot → Evidence[] → Report
 src/extract/        B 站数据提取（接口为主、页面为辅）、WBI 签名；identify.ts 从地址识别创作者
-src/classify/       rules.ts 规则；account.ts 账号层；llm.ts 模型；index.ts 入口
+src/classify/       rules.ts 规则；account.ts 账号层；llm.ts 模型；history.ts 窗口外历史；index.ts 入口
 src/scoring/        config.ts 全部参数；score.ts 评分公式（纯函数）
 src/pipeline.ts     侧边栏一侧的流程编排
 src/ui/             侧边栏界面

@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { classifyVideos } from '../src/classify';
 import { classifyAccount } from '../src/classify/account';
+import { summarizeHistory } from '../src/classify/history';
 import { score, selectWindow } from '../src/scoring/score';
 import type { CreatorSnapshot, VideoItem } from '../src/types';
 import { ReportView } from '../src/ui/ReportView';
@@ -163,5 +164,53 @@ describe('确证的构成（D-35）', () => {
     expect(html).toContain('（带货 1、付费内容 2）');
     expect(html).toContain('直接变现');
     expect(html).not.toContain('带货转化');
+  });
+});
+
+describe('窗口之外的历史（D-45）', () => {
+  // 真实情形：最近一年只发了 1 条，更早的视频置顶评论里挂过商品链接（第十次验证的小号）
+  const inactive: CreatorSnapshot = {
+    ...snapshot,
+    videos: [
+      video(4), // 窗口内，无商业内容
+      video(70, { title: '旧视频一', pinnedComment: '同款在这 https://b23.tv/mall-RXUsO-72OkP' }),
+      video(75, { title: '旧视频二', desc: '粉丝专属福利，到手价 99' }), // 只是疑似，不算
+      video(90, { title: '旧视频三', desc: '感谢某某对本期视频的支持' }),
+    ],
+  };
+
+  async function runInactive() {
+    const videos = selectWindow(inactive.videos, inactive.capturedAt);
+    const classified = await classifyVideos(videos);
+    return score(inactive, videos, classified.evidence, classifyAccount(inactive, videos), {
+      llmUsed: false,
+      history: summarizeHistory(inactive.videos, videos),
+    });
+  }
+
+  it('只统计窗口外的确证内容，不计分', async () => {
+    const r = await runInactive();
+    expect(r.content.sampleSize).toBe(1);
+    expect(r.content.point).toBe(0);
+    expect(r.history.checked).toBe(3);
+    // 疑似不算；按发布时间从新到旧
+    expect(r.history.videos.map((h) => h.video.title)).toEqual(['旧视频一', '旧视频三']);
+    expect(r.history.videos[1]?.evidence.tier).toBe('A');
+  });
+
+  it('报告里单独展示，并说明不计分', async () => {
+    const html = renderToStaticMarkup(<ReportView report={await runInactive()} />);
+    expect(html).toContain('窗口之外（不计分）');
+    expect(html).toContain('其中 2 条带确证的商业内容');
+    expect(html).toContain('b23.tv/mall-RXUsO-72OkP');
+  });
+
+  it('没有窗口外的视频时不显示这一块', async () => {
+    // 主算例里有一条一年半以前的视频（「感谢某某赞助」）
+    const h = summarizeHistory(snapshot.videos, selectWindow(snapshot.videos, snapshot.capturedAt));
+    expect(h?.checked).toBe(1);
+    expect(h?.videos).toHaveLength(1);
+    const none = score(snapshot, [], [], [], { llmUsed: false });
+    expect(renderToStaticMarkup(<ReportView report={none} />)).not.toContain('窗口之外');
   });
 });

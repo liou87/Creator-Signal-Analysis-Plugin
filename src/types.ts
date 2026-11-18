@@ -173,6 +173,16 @@ export interface Report {
   typeCounts: Record<MonetizationType, number>;
   verdicts: VideoVerdict[];
   confidence: { level: Confidence; reasons: string[] };
+  /**
+   * 取到了、但早于取样窗口的视频里的确证商业内容。只展示，不计分（D-45）。
+   * 用来区分「从来不做」和「以前做、最近不做」
+   */
+  history: {
+    /** 取到的、早于窗口的视频条数 */
+    checked: number;
+    /** 其中带确证证据的视频，按发布时间从新到旧；每条只留最高档的一条证据 */
+    videos: Array<{ video: VideoItem; evidence: Evidence }>;
+  };
   /** 本次是否使用了模型判定疑似档 */
   llmUsed: boolean;
   sources: SourceStatus[];
