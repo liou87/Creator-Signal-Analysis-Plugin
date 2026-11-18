@@ -85,6 +85,8 @@ describe('B 直接变现', () => {
     ['下单时填优惠码：UP2026', 'B3-优惠码'],
     ['购买链接在评论区置顶', 'B4-链接引导'],
     ['我的淘宝店上新了', 'B5-自营店铺'],
+    // 2026-11-18 大物是也置顶评论原文（D-49）
+    ['有需要的可以去我首页小店里看一下', 'B5-自营店铺'],
     ['新课程已上架，报名链接见下方', 'B6-付费课程'],
     ['本期为充电专属内容', 'B7-充电专属'],
   ])('%s', (desc, rule) => {
@@ -259,6 +261,22 @@ describe('账号层', () => {
     expect(state({ ...base, bio }, 'businessContact')).toBe('yes');
     expect(state({ ...base, bio: '淘宝搜索同名店铺' }, 'shop')).toBe('yes');
     expect(state({ ...base, bio: '一个爱打游戏的人' }, 'shop')).toBe('no');
+  });
+
+  it('简介没写，但样本视频里引导去自家小店 → 有（D-49）', () => {
+    const vs = [
+      v({ bvid: 'a', title: '日常' }),
+      v({ bvid: 'b', title: '直播速通（洗护篇）', pinnedComment: '有需要的可以去我首页小店里看一下' }),
+    ];
+    const found = classifyAccount({ ...base, bio: '一个爱打游戏的人' }, vs).find((a) => a.id === 'shop')!;
+    expect(found.state).toBe('yes');
+    expect(found.basis).toContain('首页小店');
+    // 简介没取到也一样：视频里的说明足以判「有」
+    expect(state({ ...base, bio: null }, 'shop', vs)).toBe('yes');
+  });
+
+  it('简介和视频都没提到店铺 → 无，含义是「没有公开说明」（D-49）', () => {
+    expect(state({ ...base, bio: '一个爱打游戏的人' }, 'shop', [v({ desc: '我去了一家小店吃饭' })])).toBe('no');
   });
 
   it('站外付费社群；只拉关注的不算（D-40）', () => {

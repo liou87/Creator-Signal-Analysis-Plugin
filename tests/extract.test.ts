@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   candidateFlags,
+  countDanmakuHits,
+  danmakuTexts,
   entriesFromTexts,
+  scanSubtitleBody,
+  summarizePlayerSubtitle,
   isUploadsPath,
   pickTitle,
   pinnedFromReply,
@@ -193,6 +197,46 @@ describe('从页面链接读视频（真实页面验证后修正）', () => {
     expect(isUploadsPath('/39627524/video')).toBe(true);
     expect(isUploadsPath('/zh-Hans/39627524')).toBe(false);
     expect(isUploadsPath('/39627524/dynamic')).toBe(false);
+  });
+});
+
+describe('口播探查的解析（只进自检，不计分）', () => {
+  it('播放器返回 → 字幕轨道；补全协议，识别 AI 字幕和登录状态', () => {
+    const s = summarizePlayerSubtitle({
+      login_mid: 0,
+      need_login_subtitle: true,
+      subtitle: {
+        subtitles: [{ lan: 'ai-zh', lan_doc: '中文（自动生成）', subtitle_url: '//aisubtitle.hdslb.com/x.json', type: 1 }],
+      },
+    });
+    expect(s).toEqual({
+      loginMid: 0,
+      needLogin: true,
+      tracks: [{ lan: '中文（自动生成）', ai: true, url: 'https://aisubtitle.hdslb.com/x.json' }],
+    });
+  });
+
+  it('字段缺失时不报错，记为未知', () => {
+    expect(summarizePlayerSubtitle({})).toEqual({ loginMid: null, needLogin: null, tracks: [] });
+  });
+
+  it('字幕正文里的商业相关说法', () => {
+    const scan = scanSubtitleBody({
+      body: [{ content: '大家好' }, { content: '本期视频由某某汽车赞助' }, { content: '我们开始吧' }],
+    });
+    expect(scan.text).toBe('大家好 本期视频由某某汽车赞助 我们开始吧');
+    expect(scan.hits).toBe(1);
+    expect(scan.sample).toContain('某某汽车赞助');
+    expect(scanSubtitleBody(null)).toEqual({ text: '', hits: 0, sample: '' });
+  });
+
+  it('弹幕 XML → 文字，并统计提示广告的条数', () => {
+    const xml =
+      '<?xml version="1.0"?><i><d p="12.3,1,25">恰饭时间到</d><d p="13,1,25">空降 3:20</d>' +
+      '<d p="20,1,25">好看 &amp; 有用</d></i>';
+    const texts = danmakuTexts(xml);
+    expect(texts).toEqual(['恰饭时间到', '空降 3:20', '好看 & 有用']);
+    expect(countDanmakuHits(texts)).toEqual({ total: 3, hits: 2, samples: ['恰饭时间到', '空降 3:20'] });
   });
 });
 

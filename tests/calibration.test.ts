@@ -30,7 +30,8 @@ const DATA: Point[] = [
   { name: '极客湾', group: '活跃', n: 30, certain: 0, suspected: 0, yes: ['businessContact', 'charge'], unknown: [] },
   { name: '影视飓风', group: '活跃', n: 30, certain: 4, suspected: 0, yes: ['businessContact', 'shop', 'course'], unknown: ['charge'] },
   { name: '何同学', group: '活跃', n: 18, certain: 4, suspected: 0, yes: ['businessContact', 'charge'], unknown: [] },
-  { name: '大物是也', group: '活跃', n: 30, certain: 8, suspected: 1, yes: ['charge'], unknown: [] },
+  // D-49：置顶评论「去我首页小店里看一下」→ 该视频由疑似外的「无」变为确证，店铺为有
+  { name: '大物是也', group: '活跃', n: 30, certain: 9, suspected: 1, yes: ['shop', 'charge'], unknown: [] },
   { name: '食贫道', group: '活跃', n: 30, certain: 13, suspected: 0, yes: ['businessContact', 'charge'], unknown: [] },
 ];
 
@@ -87,7 +88,8 @@ describe('封顶值来自样本（D-05、D-46）', () => {
   it('封顶值 = 全部 10 位占比的 90 分位数，保留两位小数', () => {
     const ratios = DATA.map((p) => run(p).content.ratio);
     const p90 = quantile(ratios, 0.9);
-    expect(p90).toBeCloseTo(0.256, 3);
+    // 第十一次验证的数据为 0.256（D-46）；D-49 修正店铺规则后为 0.281（D-51）
+    expect(p90).toBeCloseTo(0.281, 3);
     expect(DEFAULT_CONFIG.content.ratioCap).toBe(Math.round(p90 * 100) / 100);
   });
 });
@@ -108,7 +110,7 @@ describe('区分度与分档（第十一次验证的数据）', () => {
       极客湾: 'low', // 可见的只有商务邮箱和充电；商单在口播里，按定义看不到
       影视飓风: 'mid',
       何同学: 'mid',
-      大物是也: 'mid',
+      大物是也: 'high', // D-49：自家小店的引导算确证，店铺为有
       食贫道: 'high',
     });
   });

@@ -64,19 +64,19 @@ describe('端到端', () => {
     expect(r.content.certainCount).toBe(3);
     expect(r.content.suspectedCount).toBe(1);
 
-    // 占比 = (3 + 1 × 0.5) ÷ (20 + 5) = 0.14；内容层 = 60 × 0.14 ÷ 0.26 = 32.3（D-46）
+    // 占比 = (3 + 1 × 0.5) ÷ (20 + 5) = 0.14；内容层 = 60 × 0.14 ÷ 0.28 = 30（D-51）
     expect(r.content.ratio).toBeCloseTo(0.14);
-    expect(r.content.point).toBeCloseTo(32.31, 1);
-    // 下界 3 ÷ 25 = 0.12 → 27.7；上界 4 ÷ 25 = 0.16 → 36.9
-    expect(r.content.low).toBeCloseTo(27.69, 1);
-    expect(r.content.high).toBeCloseTo(36.92, 1);
+    expect(r.content.point).toBeCloseTo(30, 1);
+    // 下界 3 ÷ 25 = 0.12 → 25.7；上界 4 ÷ 25 = 0.16 → 34.3
+    expect(r.content.low).toBeCloseTo(25.71, 1);
+    expect(r.content.high).toBeCloseTo(34.29, 1);
 
     // 账号层：商务联系方式 11 + 充电 6 = 17（D-40）
     expect(r.account.score).toBe(17);
-    expect(r.total.point).toBeCloseTo(49.31, 1);
-    // 总分区间：下界 27.7 + 17；上界 36.9 + 17，再加未能检查的课程 6 分
-    expect(r.total.low).toBeCloseTo(44.69, 1);
-    expect(r.total.high).toBeCloseTo(59.92, 1);
+    expect(r.total.point).toBeCloseTo(47, 1);
+    // 总分区间：下界 25.7 + 17；上界 34.3 + 17，再加未能检查的课程 6 分
+    expect(r.total.low).toBeCloseTo(42.71, 1);
+    expect(r.total.high).toBeCloseTo(57.29, 1);
     expect(r.band).toBe('mid');
 
     // 课程入口未能检查 → 置信度为中，不扣分
@@ -104,8 +104,8 @@ describe('端到端', () => {
   });
 
   it('区间跨档时明说「还不能确定属于哪一档」（D-29）', async () => {
-    // 没有商务联系方式；1 条确证、2 条疑似 → 内容层 9.2 / 18.5 / 27.7，账号层充电 6，课程未能检查 6
-    // 总分区间 15–40，跨了「低」和「中」
+    // 没有商务联系方式；1 条确证、2 条疑似 → 内容层 8.6 / 17.1 / 25.7，账号层充电 6，课程未能检查 6
+    // 总分区间 15–38，跨了「低」和「中」
     const crossing: CreatorSnapshot = {
       ...snapshot,
       bio: '数码爱好者',

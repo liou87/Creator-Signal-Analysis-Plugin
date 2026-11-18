@@ -1,5 +1,5 @@
 import type { AccountFinding, CreatorSnapshot, Tri, VideoItem } from '../types';
-import { BUSINESS_CONTACT } from './rules';
+import { BUSINESS_CONTACT, classifyVideoByRules } from './rules';
 
 /**
  * 账号层信号。每项三态：有 / 无 / 未能检查（D-13）。
@@ -7,7 +7,10 @@ import { BUSINESS_CONTACT } from './rules';
  * 每一项都必须对应一种付钱方（D-39），所以只拉关注的公众号、小红书不算（D-40）。
  */
 
-/** 店铺：站内小店或站外网店都算。网页上看不到小店入口，只能看简介里写没写（D-40） */
+/**
+ * 店铺：站内小店或站外网店都算。网页上看不到小店入口，所以这一项衡量的是
+ * 「公开说明了店铺」：简介里写了，或样本视频里引导去自家店铺（D-40、D-49）。
+ */
 const SHOP =
   /(淘宝|天猫|京东|拼多多|微店|有赞|抖音|小红书)[^，。\n|｜]{0,6}(店|小店|旗舰店)|(淘宝|天猫|京东|拼多多)[^，。\n|｜]{0,4}搜|(店铺|网店|小店|淘宝店|旗舰店)(名|名称)?\s*[:：]|(同名|自家|我的|个人)[^，。\n|｜]{0,4}(店铺|小店|网店|周边店)|周边(店|小店|店铺)/i;
 
@@ -58,9 +61,20 @@ export function classifyAccount(
     }
   }
 
-  // 店铺：页面上看到了小店入口就算有（目前没在网页上见过）；否则看简介
-  const shop =
+  // 店铺：页面上看到了小店入口就算有（目前没在网页上见过）；否则看简介；
+  // 简介没写，再看样本视频里有没有引导去自家店铺（与充电专属反推充电同理，D-49）。
+  // 都没有时为「无」，含义是「简介和样本视频里都没有公开说明」
+  let shop: { state: Tri; basis?: string } =
     snapshot.hasShop === 'yes' ? entry('yes', '小店') : fromBio(snapshot.bio, SHOP);
+  if (shop.state !== 'yes') {
+    for (const v of videos) {
+      const hit = classifyVideoByRules(v, false).find((e) => e.reason === 'B5-自营店铺');
+      if (hit) {
+        shop = { state: 'yes', basis: `视频《${v.title}》：「${hit.quote}」` };
+        break;
+      }
+    }
+  }
 
   return [
     { id: 'businessContact', ...business },

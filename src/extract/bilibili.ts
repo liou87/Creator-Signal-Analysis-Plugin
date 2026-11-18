@@ -352,6 +352,8 @@ async function loadVideoList(
 
 interface ViewData {
   aid?: number;
+  /** 分 P 的编号，播放器和弹幕接口要用。只在提取层内部用于口播探查 */
+  cid?: number;
   desc?: string;
   pubdate?: number;
   title?: string;
@@ -386,6 +388,8 @@ interface DetailStats {
   /** 详情接口里的候选标记字段 → 出现在多少条视频里 */
   flags: Map<string, number>;
   errors: string[];
+  /** bvid → aid、cid，供口播探查使用 */
+  ids: Map<string, { aid: number; cid: number }>;
 }
 
 interface PinnedResult {
@@ -450,6 +454,7 @@ async function enrich(
   try {
     const d = await getJson<ViewData>(`${API}/x/web-interface/view?bvid=${video.bvid}`);
     aid = d.aid;
+    if (d.aid !== undefined && d.cid !== undefined) stats.ids.set(video.bvid, { aid: d.aid, cid: d.cid });
     // 列表接口里的简介可能被截断，以详情为准
     if (d.desc !== undefined) out.desc = d.desc;
     if (d.pubdate !== undefined) out.pubdate = d.pubdate;
@@ -630,6 +635,151 @@ async function loadCourseCount(mid: string, c: Collector): Promise<Tri> {
 
 const TRI_TEXT: Record<Tri, string> = { yes: '有', no: '无', unknown: '未能检查' };
 
+// ── 口播探查（只进自检，不计分）──────────────────────────────
+//
+// 口播商单在视频里，文字里看不到（D-50）。这里只回答「能不能取到」：
+// 字幕（AI 字幕里可能有「本期视频由某某赞助」）和弹幕（观众常发「恰饭」「空降」提示广告段落）。
+// 字段名来自公开资料，未经核实，所以把能核对的原始信息都写进自检。
+
+const SPOKEN_PROBE_COUNT = 3;
+/** 字幕里与商业合作相关的说法。只用于探查，统计出现次数，不做判定 */
+const SUBTITLE_AD_WORDS = /赞助|合作|恰饭|广告|感谢[^，。\s]{1,12}支持|链接/g;
+/** 弹幕里提示广告段落的说法 */
+const DANMAKU_AD_WORDS = /恰饭|空降|广告|金主|商单/;
+
+export interface PlayerData {
+  login_mid?: number;
+  need_login_subtitle?: boolean;
+  subtitle?: {
+    subtitles?: Array<{ lan?: string; lan_doc?: string; subtitle_url?: string; type?: number; ai_type?: number }>;
+  };
+}
+
+export interface SubtitleSummary {
+  /** 0 表示本次请求处于未登录状态；接口没给时为 null */
+  loginMid: number | null;
+  needLogin: boolean | null;
+  tracks: Array<{ lan: string; ai: boolean; url: string }>;
+}
+
+/** 播放器接口返回 → 字幕轨道。导出以便测试 */
+export function summarizePlayerSubtitle(d: PlayerData): SubtitleSummary {
+  return {
+    loginMid: typeof d.login_mid === 'number' ? d.login_mid : null,
+    needLogin: typeof d.need_login_subtitle === 'boolean' ? d.need_login_subtitle : null,
+    tracks: (d.subtitle?.subtitles ?? []).map((s) => ({
+      lan: s.lan_doc || s.lan || '?',
+      // type 1 / ai_type 非 0 为 AI 生成，字段含义来自公开资料
+      ai: s.type === 1 || (s.ai_type ?? 0) !== 0 || (s.lan ?? '').startsWith('ai-'),
+      url: s.subtitle_url ? (s.subtitle_url.startsWith('//') ? `https:${s.subtitle_url}` : s.subtitle_url) : '',
+    })),
+  };
+}
+
+/** 字幕正文 → 拼接后的文字，以及商业相关说法的命中。导出以便测试 */
+export function scanSubtitleBody(json: unknown): { text: string; hits: number; sample: string } {
+  const body = (json as { body?: Array<{ content?: unknown; from?: unknown }> })?.body ?? [];
+  const lines = body.map((b) => (typeof b.content === 'string' ? b.content : '')).filter(Boolean);
+  const text = lines.join(' ');
+  const matches = [...text.matchAll(SUBTITLE_AD_WORDS)];
+  const first = matches[0];
+  const sample =
+    first?.index !== undefined ? text.slice(Math.max(0, first.index - 15), first.index + first[0].length + 15) : '';
+  return { text, hits: matches.length, sample };
+}
+
+/** 弹幕 XML → 弹幕文字。不依赖 DOMParser，方便测试。导出以便测试 */
+export function danmakuTexts(xml: string): string[] {
+  const out: string[] = [];
+  for (const m of xml.matchAll(/<d [^>]*>([^<]*)<\/d>/g)) {
+    out.push(
+      (m[1] ?? '')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&'),
+    );
+  }
+  return out;
+}
+
+/** 弹幕里提示广告段落的条数和样例。导出以便测试 */
+export function countDanmakuHits(texts: string[]): { total: number; hits: number; samples: string[] } {
+  const hit = texts.filter((t) => DANMAKU_AD_WORDS.test(t));
+  return { total: texts.length, hits: hit.length, samples: hit.slice(0, 2) };
+}
+
+async function probeSpoken(
+  videos: VideoItem[],
+  ids: Map<string, { aid: number; cid: number }>,
+  keys: WbiKeys | null,
+  c: Collector,
+): Promise<void> {
+  const targets = videos.filter((v) => ids.has(v.bvid)).slice(0, SPOKEN_PROBE_COUNT);
+  if (targets.length === 0) {
+    c.fail('口播探查：字幕', '接口 player/wbi/v2', '没有拿到视频的 cid，未探查');
+    return;
+  }
+  const subtitleNotes: string[] = [];
+  const danmakuNotes: string[] = [];
+  let subtitleBodies = 0;
+  let danmakuOk = 0;
+
+  for (const v of targets) {
+    const { aid, cid } = ids.get(v.bvid)!;
+    // 字幕
+    try {
+      if (!keys) throw new Error('没有签名密钥');
+      const s = summarizePlayerSubtitle(
+        await getJson<PlayerData>(signed('/x/player/wbi/v2', { aid, cid }, keys)),
+      );
+      const login = s.loginMid === null ? '登录状态未知' : s.loginMid === 0 ? '未登录' : '已登录';
+      const head = `${v.bvid}（${login}，need_login_subtitle=${s.needLogin ?? '无此字段'}）`;
+      const track = s.tracks.find((t) => t.url) ?? s.tracks[0];
+      if (!track) {
+        subtitleNotes.push(`${head}：没有字幕轨道`);
+      } else if (!track.url) {
+        subtitleNotes.push(`${head}：有 ${s.tracks.length} 条轨道，但没有字幕地址`);
+      } else {
+        try {
+          const res = await fetch(track.url, { credentials: 'omit' });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const scan = scanSubtitleBody(await res.json());
+          subtitleBodies++;
+          subtitleNotes.push(
+            `${head}：${track.ai ? 'AI' : '人工'}字幕 ${track.lan}，正文 ${scan.text.length} 字，商业相关说法 ${scan.hits} 处${scan.sample ? `，如「${scan.sample}」` : ''}；开头「${scan.text.slice(0, 100)}」`,
+          );
+        } catch (e) {
+          subtitleNotes.push(`${head}：有字幕地址，但取正文失败（${e instanceof Error ? e.message : e}，可能是跨域）`);
+        }
+      }
+    } catch (e) {
+      subtitleNotes.push(`${v.bvid}：播放器接口失败（${e instanceof Error ? e.message : e}）`);
+    }
+    // 弹幕
+    try {
+      const res = await fetch(`${API}/x/v1/dm/list.so?oid=${cid}`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const d = countDanmakuHits(danmakuTexts(await res.text()));
+      danmakuOk++;
+      danmakuNotes.push(
+        `${v.bvid}：共 ${d.total} 条，提示广告的 ${d.hits} 条${d.samples.length ? `，如「${d.samples.join('」「')}」` : ''}`,
+      );
+    } catch (e) {
+      danmakuNotes.push(`${v.bvid}：失败（${e instanceof Error ? e.message : e}）`);
+    }
+    await sleep(REQUEST_GAP_MS);
+  }
+
+  const subtitleDetail = `取到字幕正文 ${subtitleBodies} / ${targets.length} 条。${subtitleNotes.join('；')}`;
+  if (subtitleBodies > 0) c.ok('口播探查：字幕', '接口 player/wbi/v2 + 字幕文件（不计分）', subtitleDetail);
+  else c.fail('口播探查：字幕', '接口 player/wbi/v2 + 字幕文件（不计分）', subtitleDetail);
+  const danmakuDetail = `取到 ${danmakuOk} / ${targets.length} 条视频的弹幕。${danmakuNotes.join('；')}`;
+  if (danmakuOk > 0) c.ok('口播探查：弹幕', '接口 dm/list.so（不计分）', danmakuDetail);
+  else c.fail('口播探查：弹幕', '接口 dm/list.so（不计分）', danmakuDetail);
+}
+
 // ── 入口 ────────────────────────────────────────────────────
 
 export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnapshot> {
@@ -654,6 +804,7 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
     linkSamples: new Map(),
     flags: new Map(),
     errors: [],
+    ids: new Map(),
   };
   let done = 0;
   const videos = await mapLimited(list, CONCURRENCY, async (v) => {
@@ -702,6 +853,9 @@ export async function extractSnapshot(onProgress: Progress): Promise<CreatorSnap
       [...stats.flags.entries()].map(([k, n]) => `${k} ×${n}`).join('，'),
     );
   }
+
+  onProgress('口播探查（字幕、弹幕，不计分）');
+  await probeSpoken(videos, stats.ids, keys, c);
 
   const entries = entriesFromTexts(shortTexts(document));
   const courseByApi = await loadCourseCount(mid, c);

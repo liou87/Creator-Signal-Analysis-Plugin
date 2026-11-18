@@ -81,6 +81,7 @@ export function App() {
               <div className="label">当前页面的创作者</div>
               <div className="name">{identity.name ?? '（昵称待读取）'}</div>
               <div className="muted">UID {identity.mid}</div>
+              <div className="muted">建议先切到「投稿」标签页再开始分析，视频列表更稳定。</div>
             </div>
             <button className="primary" onClick={start} disabled={running}>
               {running ? '分析中…' : report && !stale ? '重新分析' : '开始分析'}

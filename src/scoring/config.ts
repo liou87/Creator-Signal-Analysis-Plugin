@@ -20,7 +20,10 @@ export interface ScoringConfig {
     suspectedWeightRange: { low: number; high: number };
     /** 收缩参数 k：r̂ = Σw / (n + k)（D-03） */
     shrinkage: number;
-    /** 占比达到多少算内容层满分。取 10 位验证样本占比的 90 分位数 0.256（D-05、D-46） */
+    /**
+     * 占比达到多少算内容层满分。取 10 位验证样本占比的 90 分位数（D-05、D-46）。
+     * D-49 修正店铺规则后，大物是也多了 1 条确证，90 分位数由 0.256 变为 0.281，按同一办法改为 0.28（D-51）
+     */
     ratioCap: number;
     /**
      * 视频列表只来自当前页面时，窗口内至少要有多少条才给指数。
@@ -45,12 +48,12 @@ export const DEFAULT_CONFIG: ScoringConfig = {
     tierWeight: { A: 1, B: 1, C: 0.5 },
     suspectedWeightRange: { low: 0, high: 1 },
     shrinkage: 5,
-    ratioCap: 0.26,
+    ratioCap: 0.28,
     minPageSample: 10,
   },
   account: {
     businessContact: { label: '商务合作联系方式', points: 11 },
-    shop: { label: '店铺', points: 11 },
+    shop: { label: '公开说明的店铺', points: 11 },
     course: { label: '付费课程', points: 6 },
     paidCommunity: { label: '站外付费社群', points: 6 },
     charge: { label: '充电', points: 6 },
