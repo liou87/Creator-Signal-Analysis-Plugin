@@ -20,7 +20,7 @@ export interface ScoringConfig {
     suspectedWeightRange: { low: number; high: number };
     /** 收缩参数 k：r̂ = Σw / (n + k)（D-03） */
     shrinkage: number;
-    /** 占比达到多少算内容层满分。初值为假设，校准后取样本 P90（D-05） */
+    /** 占比达到多少算内容层满分。取 10 位验证样本占比的 90 分位数 0.256（D-05、D-46） */
     ratioCap: number;
     /**
      * 视频列表只来自当前页面时，窗口内至少要有多少条才给指数。
@@ -45,7 +45,7 @@ export const DEFAULT_CONFIG: ScoringConfig = {
     tierWeight: { A: 1, B: 1, C: 0.5 },
     suspectedWeightRange: { low: 0, high: 1 },
     shrinkage: 5,
-    ratioCap: 0.5,
+    ratioCap: 0.26,
     minPageSample: 10,
   },
   account: {

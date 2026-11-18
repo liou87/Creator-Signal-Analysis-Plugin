@@ -64,19 +64,19 @@ describe('端到端', () => {
     expect(r.content.certainCount).toBe(3);
     expect(r.content.suspectedCount).toBe(1);
 
-    // 占比 = (3 + 1 × 0.5) ÷ (20 + 5) = 0.14；内容层 = 60 × 0.14 ÷ 0.5 = 16.8
+    // 占比 = (3 + 1 × 0.5) ÷ (20 + 5) = 0.14；内容层 = 60 × 0.14 ÷ 0.26 = 32.3（D-46）
     expect(r.content.ratio).toBeCloseTo(0.14);
-    expect(r.content.point).toBeCloseTo(16.8);
-    // 下界 3 ÷ 25 = 0.12 → 14.4；上界 4 ÷ 25 = 0.16 → 19.2
-    expect(r.content.low).toBeCloseTo(14.4);
-    expect(r.content.high).toBeCloseTo(19.2);
+    expect(r.content.point).toBeCloseTo(32.31, 1);
+    // 下界 3 ÷ 25 = 0.12 → 27.7；上界 4 ÷ 25 = 0.16 → 36.9
+    expect(r.content.low).toBeCloseTo(27.69, 1);
+    expect(r.content.high).toBeCloseTo(36.92, 1);
 
     // 账号层：商务联系方式 11 + 充电 6 = 17（D-40）
     expect(r.account.score).toBe(17);
-    expect(r.total.point).toBeCloseTo(33.8);
-    // 总分区间：下界 14.4 + 17；上界 19.2 + 17，再加未能检查的课程 6 分
-    expect(r.total.low).toBeCloseTo(31.4);
-    expect(r.total.high).toBeCloseTo(42.2);
+    expect(r.total.point).toBeCloseTo(49.31, 1);
+    // 总分区间：下界 27.7 + 17；上界 36.9 + 17，再加未能检查的课程 6 分
+    expect(r.total.low).toBeCloseTo(44.69, 1);
+    expect(r.total.high).toBeCloseTo(59.92, 1);
     expect(r.band).toBe('mid');
 
     // 课程入口未能检查 → 置信度为中，不扣分
@@ -99,9 +99,32 @@ describe('端到端', () => {
     expect(html).toContain('未能检查');
     // 取到 21 条，窗口内 20 条，两个数字都要让人看到
     expect(html).toContain('本次取到 21 条');
-    // 区间 31–42 跨了「低」和「中」，要明说；并说明上界算进了未能检查的项
-    expect(html).toContain('区间跨了「低」和「中');
+    // 上界算进了未能检查的项，要说明是哪几项
     expect(html).toContain('付费课程，共 6 分');
+  });
+
+  it('区间跨档时明说「还不能确定属于哪一档」（D-29）', async () => {
+    // 没有商务联系方式；1 条确证、2 条疑似 → 内容层 9.2 / 18.5 / 27.7，账号层充电 6，课程未能检查 6
+    // 总分区间 15–40，跨了「低」和「中」
+    const crossing: CreatorSnapshot = {
+      ...snapshot,
+      bio: '数码爱好者',
+      videos: [
+        video(1, { desc: '同款 https://item.taobao.com/item.htm?id=1' }),
+        video(2, { desc: '粉丝专属福利，到手价 199' }),
+        video(3, { desc: '限时优惠，现在下单' }),
+        ...Array.from({ length: 17 }, (_, i) => video(4 + i)),
+      ],
+    };
+    const videos = selectWindow(crossing.videos, crossing.capturedAt);
+    const classified = await classifyVideos(videos);
+    const report = score(crossing, videos, classified.evidence, classifyAccount(crossing, videos), {
+      llmUsed: false,
+    });
+    expect(report.total.low).toBeLessThan(33);
+    expect(report.total.high).toBeGreaterThanOrEqual(33);
+    const html = renderToStaticMarkup(<ReportView report={report} />);
+    expect(html).toContain('区间跨了「低」和「中');
   });
 
   it('取不到视频时不给指数，并把自检展开（D-27）', async () => {

@@ -50,7 +50,7 @@ src/classify/       rules.ts 规则；account.ts 账号层；llm.ts 模型；his
 src/scoring/        config.ts 全部参数；score.ts 评分公式（纯函数）
 src/pipeline.ts     侧边栏一侧的流程编排
 src/ui/             侧边栏界面
-tests/              pipeline.test.tsx 是端到端算例，改公式时先看它
+tests/              pipeline.test.tsx 是端到端算例，改公式时先看它；calibration.test.ts 是 10 位真实创作者的校准数据，改参数时它会告诉你区分度和分档是否还成立
 ```
 
 ## 当前最大的未知数

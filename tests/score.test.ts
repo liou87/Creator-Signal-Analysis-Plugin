@@ -39,7 +39,8 @@ describe('内容层公式', () => {
   it('文档中的例子：3 条 2 广告 → r̂ = 0.25', () => {
     const r = run(3, ['A', 'B']);
     expect(r.content.ratio).toBeCloseTo(0.25);
-    expect(r.content.point).toBeCloseTo(30);
+    // 60 × 0.25 ÷ 0.26（D-46）
+    expect(r.content.point).toBeCloseTo(57.69, 1);
   });
 
   it('文档中的例子：30 条 10 广告 → r̂ ≈ 0.29', () => {
