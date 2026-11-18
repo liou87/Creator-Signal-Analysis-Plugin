@@ -124,6 +124,23 @@ describe('端到端', () => {
     expect(html).toContain('<details open="">');
     expect(html).toContain('code -352');
   });
+
+  it('只从页面读到 1 条窗口内的视频时也不给指数，并说明原因（D-44）', async () => {
+    const few: CreatorSnapshot = {
+      ...snapshot,
+      videoSource: 'page',
+      videos: [video(0), video(80), video(90)],
+    };
+    const videos = selectWindow(few.videos, few.capturedAt);
+    const classified = await classifyVideos(videos);
+    const report = score(few, videos, classified.evidence, classifyAccount(few, videos), {
+      llmUsed: false,
+    });
+    const html = renderToStaticMarkup(<ReportView report={report} />);
+    expect(html).toContain('本次无法给出指数');
+    expect(html).toContain('其中 1 条在最近 12 个月内，少于 10 条');
+    expect(html).not.toContain('商业化程度：');
+  });
 });
 
 describe('确证的构成（D-35）', () => {

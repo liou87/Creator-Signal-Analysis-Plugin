@@ -212,6 +212,19 @@ describe('取不到视频不等于没有商业内容（D-27）', () => {
     expect(r.content.latestPubdate).toBe(old[0]!.pubdate);
   });
 
+  it('只从页面读到很少几条窗口内的视频 → 未能评估（D-44，真实例子：只有 1 条）', () => {
+    const r = runWith(videos(1), 'page');
+    expect(r.content.sampleSize).toBe(1);
+    expect(r.content.assessed).toBe(false);
+    expect(r.confidence.level).toBe('low');
+    expect(r.confidence.reasons.join()).toContain('少于 10 条');
+  });
+
+  it('接口返回的最近投稿只有很少几条 → 照常评估：这说明最近确实发得少', () => {
+    const r = runWith(videos(1), 'latest');
+    expect(r.content.assessed).toBe(true);
+  });
+
   it('从页面读到窗口内的视频 → 可以评估，但置信度最多为中', () => {
     const r = runWith(videos(20), 'page');
     expect(r.content.assessed).toBe(true);

@@ -22,6 +22,11 @@ export interface ScoringConfig {
     shrinkage: number;
     /** 占比达到多少算内容层满分。初值为假设，校准后取样本 P90（D-05） */
     ratioCap: number;
+    /**
+     * 视频列表只来自当前页面时，窗口内至少要有多少条才给指数。
+     * 页面上的不一定是最新投稿，样本又少，就分不清「不做」和「看不出来」（D-44）
+     */
+    minPageSample: number;
   };
   /** 账号层各指标分值。强 = 11，弱 = 6，只主张「强高于弱」，不主张比例（D-07、D-40） */
   account: Record<AccountSignalId, { label: string; points: number }>;
@@ -41,6 +46,7 @@ export const DEFAULT_CONFIG: ScoringConfig = {
     suspectedWeightRange: { low: 0, high: 1 },
     shrinkage: 5,
     ratioCap: 0.5,
+    minPageSample: 10,
   },
   account: {
     businessContact: { label: '商务合作联系方式', points: 11 },

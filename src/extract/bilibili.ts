@@ -222,9 +222,10 @@ function uploadsUrl(mid: string): string {
  * 请求由 B 站自己的页面代码发出，这里只读结果，和用户自己点一下「投稿」
  * 标签看到的内容相同。不伪造任何参数（D-28）。
  */
-async function videosFromUploadsPage(mid: string): Promise<VideoItem[]> {
+async function videosFromUploadsPage(mid: string): Promise<{ list: VideoItem[]; note: string }> {
+  const url = uploadsUrl(mid);
   const frame = document.createElement('iframe');
-  frame.src = uploadsUrl(mid);
+  frame.src = url;
   frame.setAttribute('aria-hidden', 'true');
   frame.tabIndex = -1;
   // 放在屏幕外但保留尺寸：页面按可见区域渲染列表
@@ -235,9 +236,11 @@ async function videosFromUploadsPage(mid: string): Promise<VideoItem[]> {
     let last = 0;
     let stable = 0;
     let list: VideoItem[] = [];
+    let waited = 0;
     // 最多等 15 秒；数量连续两次不变即认为渲染完成
     for (let i = 0; i < 30; i++) {
       await sleep(500);
+      waited = (i + 1) / 2;
       const doc = frame.contentDocument;
       if (!doc) continue;
       list = videosFromDom(doc);
@@ -245,10 +248,28 @@ async function videosFromUploadsPage(mid: string): Promise<VideoItem[]> {
       last = list.length;
       if (stable >= 2 && i >= 4) break;
     }
-    return list;
+    return { list, note: describeFrame(frame, url, waited) };
   } finally {
     frame.remove();
   }
+}
+
+/**
+ * 后台加载的投稿页最后是什么样子。只用于自检：投稿页时好时坏，
+ * 要能从自检里分辨是没加载出来、跳到了别处、被验证页拦住，还是列表没渲染（第九次验证）
+ */
+function describeFrame(frame: HTMLIFrameElement, url: string, waited: number): string {
+  const doc = frame.contentDocument;
+  if (!doc) return `加载地址 ${url}；等了 ${waited} 秒，页面不可读（可能跳到了别的域名）`;
+  const text = (doc.body?.innerText ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  return [
+    `加载地址 ${url}`,
+    `最终路径 ${doc.location.pathname}`,
+    `页面标题「${doc.title.slice(0, 30)}」`,
+    `链接 ${doc.querySelectorAll('a[href]').length} 个`,
+    `正文开头「${text}」`,
+    `等了 ${waited} 秒`,
+  ].join('；');
 }
 
 /** 按发布时间从新到旧取前 MAX_VIDEOS 条。没有发布时间的排在最后 */
@@ -304,9 +325,10 @@ async function loadVideoList(
   } else {
     onProgress('在后台加载投稿页');
     try {
-      const list = await videosFromUploadsPage(mid);
-      if (list.length === 0) throw new Error('加载后没有找到视频链接');
-      c.ok('视频列表', '投稿页（后台加载）', `${list.length} 条`);
+      const { list, note } = await videosFromUploadsPage(mid);
+      if (list.length === 0) throw new Error(`加载后没有找到视频链接。${note}`);
+      // 成功时也写明加载情况，便于和失败的那几次对比
+      c.ok('视频列表', '投稿页（后台加载）', `${list.length} 条；${note}`);
       return { list, source: 'latest' };
     } catch (e) {
       c.fail('视频列表', '投稿页（后台加载）', e);

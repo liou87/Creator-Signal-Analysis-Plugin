@@ -51,10 +51,13 @@ function RangeBar({ low, point, high }: { low: number; point: number; high: numb
   );
 }
 
-/** 窗口里一条视频都没有时，说清楚是哪种情况 */
+/** 内容层未能评估、或窗口里一条视频都没有时，说清楚是哪种情况 */
 function emptySampleNote(content: Report['content']): string {
   const latest = content.latestPubdate ? `，最新一条发布于 ${day(content.latestPubdate)}` : '';
   if (content.source === 'none') return '没有取到这位创作者的视频列表。';
+  if (content.source === 'page' && content.sampleSize > 0) {
+    return `只从当前页面上读到 ${content.fetched} 条视频，其中 ${content.sampleSize} 条在最近 ${cfg.window.maxAgeMonths} 个月内，少于 ${cfg.content.minPageSample} 条。页面上显示的不一定是最新投稿，这么少的样本分不清「最近不做商业」和「看不出来」。切到「投稿」标签页后重新分析可以改善。`;
+  }
   if (content.source === 'page') {
     return `只从当前页面上读到 ${content.fetched} 条视频${latest}，都不在最近 ${cfg.window.maxAgeMonths} 个月内。页面上显示的不一定是最新投稿，所以不能据此认为「最近没有商业内容」。`;
   }

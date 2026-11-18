@@ -139,7 +139,8 @@ export function score(
     .map((v) => v.pubdate)
     .filter((d): d is number => d !== undefined);
   const latestPubdate = allDates.length ? Math.max(...allDates) : undefined;
-  const assessed = n > 0 || snapshot.videoSource === 'latest';
+  // 只来自当前页面的视频，窗口内太少时同样不给指数（D-44）
+  const assessed = snapshot.videoSource === 'latest' || n >= cfg.content.minPageSample;
 
   // 置信度：样本太少为低；有未能检查的项为中；否则为高
   const reasons: string[] = [];
@@ -149,7 +150,7 @@ export function score(
     level = 'mid';
     reasons.push(`未能检查：${unknownItems.map((i) => i.label).join('、')}`);
   }
-  if (snapshot.videoSource === 'page' && n > 0) {
+  if (snapshot.videoSource === 'page' && assessed) {
     level = 'mid';
     reasons.push(
       '视频列表来自当前页面上看得到的部分，不一定是最近的投稿。切到「投稿」标签页后重新分析可以改善',
@@ -157,7 +158,11 @@ export function score(
   }
   if (!assessed) {
     level = 'low';
-    reasons.push('没有取到可用的视频，内容层未能评估');
+    reasons.push(
+      n > 0
+        ? `视频列表来自当前页面，窗口内只有 ${n} 条（少于 ${cfg.content.minPageSample} 条），内容层未能评估。切到「投稿」标签页后重新分析可以改善`
+        : '没有取到可用的视频，内容层未能评估',
+    );
   } else if (n < cfg.confidence.minSample) {
     level = 'low';
     reasons.push(`样本仅 ${n} 条视频（少于 ${cfg.confidence.minSample} 条）`);
